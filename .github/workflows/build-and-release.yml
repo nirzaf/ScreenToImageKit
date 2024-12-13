@@ -14,10 +14,10 @@ jobs:
     runs-on: windows-latest
     
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.12'
     
@@ -32,22 +32,14 @@ jobs:
         pyinstaller --onefile --noconsole --name ScreenToImageKit --add-data "icons/*;icons/" main.py
     
     - name: Create Release
-      id: create_release
-      uses: actions/create-release@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      id: create_release
+      uses: softprops/action-gh-release@v1
       with:
-        tag_name: ${{ github.ref }}
-        release_name: Release ${{ github.ref }}
+        files: ./dist/ScreenToImageKit.exe
+        name: Release ${{ github.ref_name }}
+        tag_name: ${{ github.ref_name }}
         draft: false
         prerelease: false
-        
-    - name: Upload Release Asset
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./dist/ScreenToImageKit.exe
-        asset_name: ScreenToImageKit.exe
-        asset_content_type: application/octet-stream
+        generate_release_notes: true
