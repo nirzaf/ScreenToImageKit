@@ -19,7 +19,7 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
-        python-version: '3.x'
+        python-version: '3.12'
     
     - name: Install dependencies
       run: |
@@ -29,33 +29,25 @@ jobs:
     
     - name: Build executable
       run: |
-        pyinstaller --onefile --noconsole --name ScreenToImageKit screen-to-imagekit.py
+        pyinstaller --onefile --noconsole --name ScreenToImageKit --add-data "icons/*;icons/" main.py
     
     - name: Create Release
       id: create_release
-      uses: softprops/action-gh-release@v1
+      uses: actions/create-release@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        files: |
-          dist/ScreenToImageKit.exe
-        name: Release ${{ github.ref_name }}
-        body: |
-          # ScreenToImageKit ${{ github.ref_name }}
-          
-          ## Installation
-          1. Download the ScreenToImageKit.exe file
-          2. Run the executable
-          3. Configure your ImageKit credentials on first run
-          
-          ## Requirements
-          - Windows OS
-          - ImageKit account with valid credentials
+        tag_name: ${{ github.ref }}
+        release_name: Release ${{ github.ref }}
         draft: false
         prerelease: false
-
-    - name: Upload artifacts
-      uses: actions/upload-artifact@v3
+        
+    - name: Upload Release Asset
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        name: ScreenToImageKit
-        path: dist/ScreenToImageKit.exe
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./dist/ScreenToImageKit.exe
+        asset_name: ScreenToImageKit.exe
+        asset_content_type: application/octet-stream
