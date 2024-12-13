@@ -1,4 +1,4 @@
-cryptography
+pillow
 pyperclip
-Pillow
 imagekitio
+cryptography

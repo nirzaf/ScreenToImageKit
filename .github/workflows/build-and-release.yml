@@ -1,0 +1,66 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'  # Trigger on version tags
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.x'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pyinstaller
+    
+    - name: Build executable
+      run: |
+        pyinstaller --onefile --noconsole --name ScreenToImageKit screen-to-imagekit.py
+    
+    - name: Generate changelog
+      id: changelog
+      uses: metcalfc/changelog-generator@v4.0.1
+      with:
+        myToken: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Create Release
+      id: create_release
+      uses: softprops/action-gh-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        files: |
+          dist/ScreenToImageKit.exe
+        name: Release ${{ github.ref_name }}
+        body: |
+          # ScreenToImageKit ${{ github.ref_name }}
+          
+          ## What's Changed
+          ${{ steps.changelog.outputs.changelog }}
+          
+          ## Installation
+          1. Download the ScreenToImageKit.exe file
+          2. Run the executable
+          3. Configure your ImageKit credentials on first run
+          
+          ## Requirements
+          - Windows OS
+          - ImageKit account with valid credentials
+        draft: false
+        prerelease: false
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: ScreenToImageKit
+        path: dist/ScreenToImageKit.exe
