@@ -24,6 +24,8 @@ class MainWindow:
         self.status_label = None
         self.screenshot_button = None
         self.config_button = None
+        self.import_env_button = None
+        self.direct_upload_var = None
         
         # Resources
         self.icon_capture = None
@@ -78,6 +80,15 @@ class MainWindow:
         )
         self.info_label.pack(pady=10)
 
+        # Direct upload checkbox
+        self.direct_upload_var = tk.BooleanVar()
+        direct_upload_checkbox = ttk.Checkbutton(
+            main_frame,
+            text="Upload directly to ImageKit",
+            variable=self.direct_upload_var
+        )
+        direct_upload_checkbox.pack(pady=5)
+
         # Screenshot button
         self.screenshot_button = ttk.Button(
             main_frame,
@@ -96,15 +107,27 @@ class MainWindow:
         )
         self.status_label.pack(pady=10)
 
+        # Config frame
+        config_frame = ttk.Frame(main_frame)
+        config_frame.pack(pady=10, fill="x")
+
         # Config button
         self.config_button = ttk.Button(
-            main_frame,
+            config_frame,
             text="Configure ImageKit",
             command=self._handle_config,
             image=self.icon_config,
             compound="left"
         )
-        self.config_button.pack(pady=10, fill="x")
+        self.config_button.pack(side=tk.LEFT, padx=(0, 5), expand=True, fill="x")
+
+        # Import from .env button
+        self.import_env_button = ttk.Button(
+            config_frame,
+            text="Import from .env",
+            command=self._handle_import_env
+        )
+        self.import_env_button.pack(side=tk.LEFT, expand=True, fill="x")
 
         logger.debug("Main UI created successfully")
 
@@ -159,12 +182,17 @@ class MainWindow:
             temp_path, screenshot = self.image_handler.capture_area(coords)
             resized_image = self.image_handler.resize_preview(screenshot)
             
-            PreviewWindow(
-                self.root,
-                resized_image,
-                lambda: self._handle_upload(temp_path),
-                lambda: self._handle_cancel(temp_path)
-            )
+            if self.direct_upload_var.get():
+                # Direct upload without preview
+                self._handle_upload(temp_path)
+            else:
+                # Show preview window
+                PreviewWindow(
+                    self.root,
+                    resized_image,
+                    lambda: self._handle_upload(temp_path),
+                    lambda: self._handle_cancel(temp_path)
+                )
         except Exception as e:
             logger.error(f"Error handling selected area: {e}")
             messagebox.showerror("Error", f"Failed to process selection: {str(e)}")
@@ -225,6 +253,35 @@ class MainWindow:
         else:
             self.status_label.config(
                 text="ImageKit configuration cancelled.",
+                foreground="red"
+            )
+
+    def _handle_import_env(self):
+        """Handle importing configuration from .env file."""
+        try:
+            private_key, public_key, url_endpoint = self.config_manager.load_env_credentials()
+            if all([private_key, public_key, url_endpoint]):
+                if self.imagekit_service.initialize(private_key, public_key, url_endpoint):
+                    # Save to encrypted storage for future use
+                    self.config_manager.save_credentials(private_key, public_key, url_endpoint)
+                    self.status_label.config(
+                        text="Configuration imported from .env successfully!",
+                        foreground="green"
+                    )
+                else:
+                    self.status_label.config(
+                        text="Error initializing ImageKit with .env credentials.",
+                        foreground="red"
+                    )
+            else:
+                self.status_label.config(
+                    text="No valid credentials found in .env file.",
+                    foreground="red"
+                )
+        except Exception as e:
+            logger.error(f"Error importing .env configuration: {e}")
+            self.status_label.config(
+                text=f"Error importing .env configuration: {str(e)}",
                 foreground="red"
             )
 

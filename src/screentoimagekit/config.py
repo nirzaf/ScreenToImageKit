@@ -3,12 +3,14 @@
 import os
 import logging
 from cryptography.fernet import Fernet
+from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
 
 # Constants
 CREDENTIALS_FILE = "imagekit_credentials.dat"
 KEY_FILE = "encryption_key.key"
+ENV_FILE = ".env"
 
 class CredentialsError(Exception):
     """Exception raised for credential-related errors."""
@@ -38,6 +40,25 @@ class ConfigManager:
     """Manages application configuration and credentials."""
     
     @staticmethod
+    def load_env_credentials():
+        """Load credentials from .env file."""
+        try:
+            # Try to load from .env file
+            if os.path.exists(ENV_FILE):
+                load_dotenv(ENV_FILE)
+                private_key = os.getenv('PRIVATE_KEY')
+                public_key = os.getenv('PUBLIC_KEY')
+                url_endpoint = os.getenv('URL_ENDPOINT')
+                
+                if all([private_key, public_key, url_endpoint]):
+                    logger.info("Credentials loaded from .env file")
+                    return private_key, public_key, url_endpoint
+            return None, None, None
+        except Exception as e:
+            logger.error(f"Error loading .env credentials: {e}")
+            return None, None, None
+    
+    @staticmethod
     def save_credentials(private_key, public_key, url_endpoint):
         """Save ImageKit credentials securely."""
         try:
@@ -61,8 +82,14 @@ class ConfigManager:
 
     @staticmethod
     def load_credentials():
-        """Load ImageKit credentials."""
+        """Load ImageKit credentials from encrypted file or .env."""
         try:
+            # First try to load from .env file
+            private_key, public_key, url_endpoint = ConfigManager.load_env_credentials()
+            if all([private_key, public_key, url_endpoint]):
+                return private_key, public_key, url_endpoint
+
+            # If .env credentials not found, try encrypted file
             if not (os.path.exists(KEY_FILE) and 
                    os.path.exists(CREDENTIALS_FILE) and 
                    os.path.getsize(CREDENTIALS_FILE) > 0):

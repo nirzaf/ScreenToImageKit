@@ -3,3 +3,4 @@ pyperclip
 imagekitio
 cryptography
 pystray
+python-dotenv
