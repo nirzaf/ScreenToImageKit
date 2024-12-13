@@ -2,3 +2,4 @@ pillow
 pyperclip
 imagekitio
 cryptography
+pystray
