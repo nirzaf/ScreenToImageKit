@@ -44,7 +44,31 @@ ScreenToImageKit is a Python application that allows users to capture screenshot
 - **Multiple Image Uploads**: Allow uploading multiple images at once.
 - **Integration with Other Services**: Integrate with other image hosting services.
 
-## Call for Open Source Community Support
+# ScreenToImageKit
+
+A Python application that captures screenshots and uploads them to ImageKit.
+
+## Publishing New Releases
+
+### Prerequisites
+1. Ensure you have a GitHub account and repository access
+2. Make sure all your changes are committed and pushed
+
+### Publishing Steps
+
+1. **Update Version Number**
+   - Follow semantic versioning (MAJOR.MINOR.PATCH)
+   - Example versions: v1.0.0, v1.1.0, v1.2.1
+
+2. **Create and Push a New Tag**
+   ```bash
+   # Create a new tag
+   git tag v1.0.0
+
+   # Push the tag to GitHub
+   git push origin v1.0.0
+
+## For Open Source Community Support
 
 We welcome contributions from the open source community to help improve ScreenToImageKit. If you have any ideas, suggestions, or bug reports, please open an issue or submit a pull request. Your support and contributions are greatly appreciated!
 
