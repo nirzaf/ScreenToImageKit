@@ -4,11 +4,41 @@ import os
 import logging
 from datetime import datetime
 from PIL import ImageGrab, Image
+import time
 
 logger = logging.getLogger(__name__)
 
 class ImageHandler:
     """Handles image capture and manipulation operations."""
+
+    @staticmethod
+    def capture_fullscreen(window_to_hide=None):
+        """Capture full screen screenshot."""
+        try:
+            # Hide window if provided
+            if window_to_hide:
+                window_to_hide.withdraw()
+                # Small delay to ensure window is hidden
+                time.sleep(0.5)
+
+            logger.debug("Capturing full screen")
+            screenshot = ImageGrab.grab()
+            
+            # Generate temporary file path
+            temp_path = f"screenshot_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+            screenshot.save(temp_path)
+            logger.info(f"Screenshot saved temporarily as {temp_path}")
+            
+            # Show window again if it was hidden
+            if window_to_hide:
+                window_to_hide.deiconify()
+            
+            return temp_path, screenshot
+        except Exception as e:
+            logger.error(f"Error capturing full screen: {e}")
+            if window_to_hide:
+                window_to_hide.deiconify()
+            raise
 
     @staticmethod
     def capture_area(coords):

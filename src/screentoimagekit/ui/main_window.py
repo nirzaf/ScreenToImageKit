@@ -23,6 +23,7 @@ class MainWindow:
         self.info_label = None
         self.status_label = None
         self.screenshot_button = None
+        self.fullscreen_button = None
         self.config_button = None
         self.import_env_button = None
         self.direct_upload_var = None
@@ -80,6 +81,30 @@ class MainWindow:
         )
         self.info_label.pack(pady=10)
 
+        # Screenshot buttons frame
+        screenshot_frame = ttk.Frame(main_frame)
+        screenshot_frame.pack(pady=10, fill="x")
+
+        # Area screenshot button
+        self.screenshot_button = ttk.Button(
+            screenshot_frame,
+            text="Select Area & Capture",
+            command=self._handle_capture,
+            image=self.icon_capture,
+            compound="left"
+        )
+        self.screenshot_button.pack(side=tk.LEFT, padx=(0, 5), expand=True, fill="x")
+
+        # Full screen screenshot button
+        self.fullscreen_button = ttk.Button(
+            screenshot_frame,
+            text="Capture Full Screen",
+            command=self._handle_fullscreen_capture,
+            image=self.icon_capture,
+            compound="left"
+        )
+        self.fullscreen_button.pack(side=tk.LEFT, expand=True, fill="x")
+
         # Direct upload checkbox
         self.direct_upload_var = tk.BooleanVar()
         direct_upload_checkbox = ttk.Checkbutton(
@@ -88,16 +113,6 @@ class MainWindow:
             variable=self.direct_upload_var
         )
         direct_upload_checkbox.pack(pady=5)
-
-        # Screenshot button
-        self.screenshot_button = ttk.Button(
-            main_frame,
-            text="Select Area & Capture",
-            command=self._handle_capture,
-            image=self.icon_capture,
-            compound="left"
-        )
-        self.screenshot_button.pack(pady=10, fill="x")
 
         # Status label
         self.status_label = ttk.Label(
@@ -174,6 +189,34 @@ class MainWindow:
             logger.error(f"Error in capture: {e}")
             messagebox.showerror("Error", f"Failed to start capture: {str(e)}")
             self.root.deiconify()
+
+    def _handle_fullscreen_capture(self):
+        """Handle full screen capture button click."""
+        if not self.imagekit_service.is_configured:
+            self.status_label.config(
+                text="Please configure ImageKit credentials.",
+                foreground="red"
+            )
+            return
+
+        try:
+            temp_path, screenshot = self.image_handler.capture_fullscreen(window_to_hide=self.root)
+            resized_image = self.image_handler.resize_preview(screenshot)
+            
+            if self.direct_upload_var.get():
+                # Direct upload without preview
+                self._handle_upload(temp_path)
+            else:
+                # Show preview window
+                PreviewWindow(
+                    self.root,
+                    resized_image,
+                    lambda: self._handle_upload(temp_path),
+                    lambda: self._handle_cancel(temp_path)
+                )
+        except Exception as e:
+            logger.error(f"Error in full screen capture: {e}")
+            messagebox.showerror("Error", f"Failed to capture full screen: {str(e)}")
 
     def _handle_area_selected(self, coords):
         """Handle area selection completion."""
