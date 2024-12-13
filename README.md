@@ -1,15 +1,21 @@
 # ScreenToImageKit
 
-ScreenToImageKit is a Python application that allows users to capture screenshots of selected areas on their screen and upload them directly to ImageKit. This tool is designed to be user-friendly and efficient, making it easy to capture and share screenshots.
+ScreenToImageKit is a Python application that allows users to capture screenshots (both full screen and selected areas) and upload them directly to ImageKit. This tool is designed to be user-friendly and efficient, making it easy to capture and share screenshots.
 
-## Existing Features
+## Features
 
-- **Area Selection**: Select a specific area on your screen to capture.
-- **Capturing Screenshots**: Capture the selected area and save it as an image file.
-- **Configuring ImageKit**: Configure ImageKit credentials to enable uploading of images.
-- **Uploading Images to ImageKit**: Upload captured screenshots directly to ImageKit and copy the URL to the clipboard.
+- **Area Selection**: Select a specific area on your screen to capture
+- **Full Screen Capture**: Capture your entire screen with a single click
+- **Direct Upload**: Option to upload screenshots directly to ImageKit without preview
+- **Preview Window**: Review your screenshots before uploading (optional)
+- **Multiple Configuration Options**:
+  - Configure via UI dialog
+  - Import configuration from `.env` file
+- **Secure Storage**: Encrypted storage of ImageKit credentials
+- **System Tray Integration**: Quick access to app features
+- **Clipboard Integration**: Automatically copies uploaded image URLs to clipboard
 
-## Usage Instructions
+## Installation
 
 1. **Clone the Repository**:
    ```bash
@@ -24,53 +30,66 @@ ScreenToImageKit is a Python application that allows users to capture screenshot
 
 3. **Run the Application**:
    ```bash
-   python screen-to-imagekit.py
+   python main.py
    ```
 
-4. **Configure ImageKit**:
-   - Click on the "Configure ImageKit" button.
-   - Enter your ImageKit credentials (Private Key, Public Key, URL Endpoint).
-   - Click "OK" to save the configuration.
+## Configuration
 
-5. **Capture and Upload Screenshot**:
-   - Click on the "Select Area & Capture" button.
-   - Select the area on your screen that you want to capture.
-   - The captured screenshot will be uploaded to ImageKit, and the URL will be copied to your clipboard.
+You have two ways to configure ImageKit credentials:
 
-## Future Improvements Roadmap
+### 1. Using the UI
+- Click on the "Configure ImageKit" button
+- Enter your ImageKit credentials:
+  - Private Key
+  - Public Key
+  - URL Endpoint
+- Click "OK" to save
 
-- **Enhanced UI**: Improve the user interface for a better user experience.
-- **Annotation Tools**: Add tools to annotate screenshots before uploading.
-- **Multiple Image Uploads**: Allow uploading multiple images at once.
-- **Integration with Other Services**: Integrate with other image hosting services.
+### 2. Using .env File
+Create a `.env` file in the root directory with the following content:
+```
+PRIVATE_KEY=your_private_key
+PUBLIC_KEY=your_public_key
+URL_ENDPOINT=your_url_endpoint
+```
+Then either:
+- Start the app (it will load credentials automatically)
+- Click "Import from .env" button to load credentials manually
 
-# ScreenToImageKit
+## Usage
 
-A Python application that captures screenshots and uploads them to ImageKit.
+1. **Capture Area**:
+   - Click "Select Area & Capture"
+   - Draw a rectangle around the area you want to capture
+   - Choose to preview or upload directly using the checkbox
 
-## Publishing New Releases
+2. **Full Screen Capture**:
+   - Click "Capture Full Screen"
+   - The app will hide itself during capture
+   - Choose to preview or upload directly using the checkbox
 
-### Prerequisites
-1. Ensure you have a GitHub account and repository access
-2. Make sure all your changes are committed and pushed
+3. **Direct Upload**:
+   - Check "Upload directly to ImageKit" to skip the preview
+   - Uncheck to review screenshots before uploading
 
-### Publishing Steps
+4. **Preview Window**:
+   - Review your screenshot
+   - Click "Upload" to proceed or "Cancel" to discard
+   - The URL will be copied to your clipboard after upload
 
-1. **Update Version Number**
-   - Follow semantic versioning (MAJOR.MINOR.PATCH)
-   - Example versions: v1.0.0, v1.1.0, v1.2.1
+## Future Improvements
 
-2. **Create and Push a New Tag**
-   ```bash
-   # Create a new tag
-   git tag v1.0.0
+- **Enhanced UI**: Improve the user interface for a better user experience
+- **Annotation Tools**: Add tools to annotate screenshots before uploading
+- **Multiple Image Uploads**: Allow uploading multiple images at once
+- **Additional Services**: Integration with other image hosting services
+- **Hotkey Support**: Global hotkeys for quick capture
 
-   # Push the tag to GitHub
-   git push origin v1.0.0
+## Contributing
 
-## For Open Source Community Support
-
-We welcome contributions from the open source community to help improve ScreenToImageKit. If you have any ideas, suggestions, or bug reports, please open an issue or submit a pull request. Your support and contributions are greatly appreciated!
+We welcome contributions from the open source community! If you have ideas, suggestions, or bug reports:
+1. Open an issue to discuss proposed changes
+2. Submit a pull request with your improvements
 
 ## License
 

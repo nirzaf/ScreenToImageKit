@@ -4,7 +4,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="screentoimagekit",
-    version="1.0.0",
+    version="1.1.0",  # Updated version for new features
     packages=find_packages(where="src"),
     package_dir={"": "src"},
     install_requires=[
@@ -12,7 +12,8 @@ setup(
         "pyperclip",
         "imagekitio",
         "cryptography",
-        "pystray"
+        "pystray",
+        "python-dotenv"
     ],
     entry_points={
         "console_scripts": [
