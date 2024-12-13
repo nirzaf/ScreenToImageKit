@@ -84,28 +84,43 @@ class ScreenshotApp:
         logger.debug("Main UI created successfully")
 
     def configure_imagekit(self):
-        private_key = simpledialog.askstring("ImageKit Configuration", "Enter Private Key:")
-        public_key = simpledialog.askstring("ImageKit Configuration", "Enter Public Key:")
-        url_endpoint = simpledialog.askstring("ImageKit Configuration", "Enter URL Endpoint:")
+        dialog = ConfigDialog(self.root)
+        self.root.wait_window(dialog)
+        
+        if dialog.result:
+            try:
+                # Initialize ImageKit instance first to validate credentials
+                self.imagekit = ImageKit(
+                    private_key=dialog.result['private_key'],
+                    public_key=dialog.result['public_key'],
+                    url_endpoint=dialog.result['url_endpoint']
+                )
 
-        if private_key and public_key and url_endpoint:
-            # Generate a key if it doesn't exist
-            if not os.path.exists(KEY_FILE):
-                key = Fernet.generate_key()
-                with open(KEY_FILE, "wb") as key_file:
-                    key_file.write(key)
-            else:
-                with open(KEY_FILE, "rb") as key_file:
-                    key = key_file.read()
+                # If initialization successful, save the credentials
+                if not os.path.exists(KEY_FILE):
+                    key = Fernet.generate_key()
+                    with open(KEY_FILE, "wb") as key_file:
+                        key_file.write(key)
+                else:
+                    with open(KEY_FILE, "rb") as key_file:
+                        key = key_file.read()
 
-            encrypted_credentials = encrypt_credentials(private_key, public_key, url_endpoint, key)
-            with open(CREDENTIALS_FILE, "wb") as cred_file:
-                cred_file.write(encrypted_credentials)
-            self.load_credentials()
-            self.status_label.config(text="ImageKit configured successfully!", fg="green")
+                encrypted_credentials = encrypt_credentials(
+                    dialog.result['private_key'],
+                    dialog.result['public_key'],
+                    dialog.result['url_endpoint'],
+                    key
+                )
+                with open(CREDENTIALS_FILE, "wb") as cred_file:
+                    cred_file.write(encrypted_credentials)
+                
+                self.status_label.config(text="ImageKit configured successfully!", fg="green")
+            except Exception as e:
+                logger.error(f"Error configuring ImageKit: {e}")
+                self.status_label.config(text=f"Error configuring ImageKit: {str(e)}", fg="red")
+                self.imagekit = None
         else:
             self.status_label.config(text="ImageKit configuration cancelled.", fg="red")
-
 
     def load_credentials(self):
         try:
@@ -247,6 +262,53 @@ class ScreenshotApp:
     def run(self):
         logger.info("Starting application main loop")
         self.root.mainloop()
+
+class ConfigDialog(tk.Toplevel):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.title("ImageKit Configuration")
+        self.result = None
+        
+        # Make dialog modal
+        self.transient(parent)
+        self.grab_set()
+        
+        # Create form fields
+        tk.Label(self, text="Private Key:").grid(row=0, column=0, padx=5, pady=5, sticky="e")
+        self.private_key = tk.Entry(self, width=50)
+        self.private_key.grid(row=0, column=1, padx=5, pady=5)
+        
+        tk.Label(self, text="Public Key:").grid(row=1, column=0, padx=5, pady=5, sticky="e")
+        self.public_key = tk.Entry(self, width=50)
+        self.public_key.grid(row=1, column=1, padx=5, pady=5)
+        
+        tk.Label(self, text="URL Endpoint:").grid(row=2, column=0, padx=5, pady=5, sticky="e")
+        self.url_endpoint = tk.Entry(self, width=50)
+        self.url_endpoint.grid(row=2, column=1, padx=5, pady=5)
+        
+        # Buttons
+        button_frame = tk.Frame(self)
+        button_frame.grid(row=3, column=0, columnspan=2, pady=10)
+        
+        tk.Button(button_frame, text="OK", command=self.ok_clicked).pack(side=tk.LEFT, padx=5)
+        tk.Button(button_frame, text="Cancel", command=self.cancel_clicked).pack(side=tk.LEFT, padx=5)
+        
+        # Center the dialog
+        self.geometry("+%d+%d" % (parent.winfo_rootx() + 50, parent.winfo_rooty() + 50))
+        
+        # Set focus on first field
+        self.private_key.focus_set()
+        
+    def ok_clicked(self):
+        self.result = {
+            'private_key': self.private_key.get(),
+            'public_key': self.public_key.get(),
+            'url_endpoint': self.url_endpoint.get()
+        }
+        self.destroy()
+        
+    def cancel_clicked(self):
+        self.destroy()
 
 if __name__ == "__main__":
     try:
