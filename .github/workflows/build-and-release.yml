@@ -27,19 +27,6 @@ jobs:
       run: |
         pyinstaller --onefile --noconsole --name ScreenToImageKit screen-to-imagekit.py
     
-    - name: Generate changelog
-      id: github_release
-      uses: mikepenz/release-changelog-builder-action@v4
-      with:
-        configuration: |
-          {
-            "template": "#{{CHANGELOG}}\n\n## Installation\n1. Download the ScreenToImageKit.exe file\n2. Run the executable\n3. Configure your ImageKit credentials on first run\n\n## Requirements\n- Windows OS\n- ImageKit account with valid credentials",
-            "pr_template": "- ${{TITLE}} (#${{NUMBER}})",
-            "empty_template": "- No changes"
-          }
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    
     - name: Create Release
       id: create_release
       uses: softprops/action-gh-release@v1
@@ -49,7 +36,17 @@ jobs:
         files: |
           dist/ScreenToImageKit.exe
         name: Release ${{ github.ref_name }}
-        body: ${{steps.github_release.outputs.changelog}}
+        body: |
+          # ScreenToImageKit ${{ github.ref_name }}
+          
+          ## Installation
+          1. Download the ScreenToImageKit.exe file
+          2. Run the executable
+          3. Configure your ImageKit credentials on first run
+          
+          ## Requirements
+          - Windows OS
+          - ImageKit account with valid credentials
         draft: false
         prerelease: false
 
