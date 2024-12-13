@@ -3,14 +3,14 @@ import os
 import tkinter as tk
 import traceback
 from datetime import datetime
-from tkinter import messagebox, simpledialog
+from tkinter import messagebox, simpledialog, ttk
 import secrets
 from cryptography.fernet import Fernet
-
 import pyperclip
-from PIL import ImageGrab
+from PIL import ImageGrab, ImageTk
 from imagekitio import ImageKit
 from imagekitio.models.UploadFileRequestOptions import UploadFileRequestOptions
+import platform
 
 # Configure logging
 logging.basicConfig(
@@ -26,12 +26,14 @@ logger = logging.getLogger(__name__)
 CREDENTIALS_FILE = "imagekit_credentials.dat"
 KEY_FILE = "encryption_key.key"
 
+
 def encrypt_credentials(private_key, public_key, url_endpoint, key):
     """Encrypts ImageKit credentials using Fernet."""
     f = Fernet(key)
     credentials = f"{private_key}:{public_key}:{url_endpoint}"
     encrypted_credentials = f.encrypt(credentials.encode())
     return encrypted_credentials
+
 
 def decrypt_credentials(encrypted_credentials, key):
     """Decrypts ImageKit credentials using Fernet."""
@@ -50,13 +52,40 @@ class ScreenshotApp:
         logger.info("Initializing ScreenshotApp")
         self.root = tk.Tk()
         self.root.title("Screenshot to ImageKit")
-
+        self.root.withdraw()  # Hide main window initially
+        self.root.protocol("WM_DELETE_WINDOW", self.hide_window)  # Handle close button
+        self.root.resizable(False, False)  # Disable resizing
         # Initialize variables
         self.start_x = None
         self.start_y = None
         self.current_rect = None
         self.selection_window = None
         self.imagekit = None
+        self.temp_path = None
+        self.preview_window = None
+        self.preview_image = None
+        self.clipboard_button_visible = False  # Flag for button visibility
+
+        # Load icons
+        self.icon_capture = self.load_icon("icons/capture.png")
+        self.icon_config = self.load_icon("icons/config.png")
+        self.icon_tray = self.load_icon("icons/tray.png")
+
+        # Create system tray icon
+        self.tray_icon = tk.PhotoImage(file="icons/tray.png")  # Load icon for tray
+        self.tray = tk.Menu(self.root, tearoff=0)
+        self.tray.add_command(label="Show", command=self.show_window)
+        self.tray.add_command(label="Capture", command=self.start_selection)
+        self.tray.add_command(label="Config", command=self.configure_imagekit)
+        self.tray.add_separator()
+        self.tray.add_command(label="Exit", command=self.exit_app)
+        self.tray_icon_menu = tk.Menu(self.root, tearoff=0)
+        self.tray_icon_menu.add_command(label="Show", command=self.show_window)
+        self.tray_icon_menu.add_command(label="Capture", command=self.start_selection)
+        self.tray_icon_menu.add_command(label="Config", command=self.configure_imagekit)
+        self.tray_icon_menu.add_separator()
+        self.tray_icon_menu.add_command(label="Exit", command=self.exit_app)
+        self.tray_icon = self.create_tray_icon()
 
         # Create main UI
         self.create_main_ui()
@@ -66,27 +95,75 @@ class ScreenshotApp:
 
         logger.info("Application initialized successfully")
 
+    def load_icon(self, path):
+        try:
+            return tk.PhotoImage(file=path)
+        except tk.TclError as e:
+            logger.error(f"Error loading icon '{path}': {e}")
+            return None
+
+    def create_tray_icon(self):
+        try:
+            if platform.system() == "Darwin":
+                icon = self.tray_icon
+            else:
+                import pystray
+                icon = pystray.Icon("ScreenshotApp", self.tray_icon, "Screenshot to ImageKit", self.tray_icon_menu)
+                icon.run_async()
+            return icon
+        except Exception as e:
+            logger.error(f"Error creating tray icon: {e}")
+            return None
+
+    def hide_window(self):
+        self.root.withdraw()  # Hide main window
+        if platform.system() == "Darwin":
+            self.show_tray_message("Screenshot to ImageKit", "Running in system tray")
+
+    def show_window(self):
+        self.root.deiconify()  # Show main window
+        self.root.lift() # Ensure window is on top
+    
+    def show_tray_message(self, title, message):
+        if platform.system() == "Darwin":
+           import subprocess
+           subprocess.run(['osascript', '-e', f'display notification "{message}" with title "{title}"'])
+
+    def exit_app(self):
+        if self.tray_icon and platform.system() != "Darwin":
+             self.tray_icon.stop()
+        self.root.destroy()
+
+
     def create_main_ui(self):
         logger.debug("Creating main UI elements")
         # Create and pack widgets
-        self.info_label = tk.Label(self.root, text="Click the button below to start area selection")
+        main_frame = tk.Frame(self.root, padx=20, pady=20)
+        main_frame.pack(expand=True, fill="both")
+
+        # Labels and buttons using ttk for a more modern look
+        style = ttk.Style()
+        style.configure("TButton", padding=6, font=("Arial", 10))  # Setting global style
+
+        self.info_label = ttk.Label(main_frame, text="Click the button below to start area selection", font=("Arial", 10))
         self.info_label.pack(pady=10)
 
-        self.screenshot_button = tk.Button(self.root, text="Select Area & Capture", command=self.start_selection)
-        self.screenshot_button.pack(pady=10)
+        self.screenshot_button = ttk.Button(main_frame, text="Select Area & Capture", command=self.start_selection,
+                                            image=self.icon_capture, compound="left")
+        self.screenshot_button.pack(pady=10, fill="x")
 
-        self.status_label = tk.Label(self.root, text="")
+        self.status_label = ttk.Label(main_frame, text="", font=("Arial", 9))
         self.status_label.pack(pady=10)
-        
-        self.config_button = tk.Button(self.root, text="Configure ImageKit", command=self.configure_imagekit)
-        self.config_button.pack(pady=10)
 
+        self.config_button = ttk.Button(main_frame, text="Configure ImageKit", command=self.configure_imagekit,
+                                         image=self.icon_config, compound="left")
+        self.config_button.pack(pady=10, fill="x")
         logger.debug("Main UI created successfully")
 
     def configure_imagekit(self):
         dialog = ConfigDialog(self.root)
         self.root.wait_window(dialog)
-        
+
         if dialog.result:
             try:
                 # Initialize ImageKit instance first to validate credentials
@@ -113,7 +190,7 @@ class ScreenshotApp:
                 )
                 with open(CREDENTIALS_FILE, "wb") as cred_file:
                     cred_file.write(encrypted_credentials)
-                
+
                 self.status_label.config(text="ImageKit configured successfully!", fg="green")
             except Exception as e:
                 logger.error(f"Error configuring ImageKit: {e}")
@@ -141,14 +218,13 @@ class ScreenshotApp:
             logger.error(f"Error loading credentials: {e}")
             self.status_label.config(text=f"Error loading credentials: {e}", fg="red")
 
-
     def start_selection(self):
         if self.imagekit is None:
             self.status_label.config(text="Please configure ImageKit credentials.", fg="red")
             return
         logger.info("Starting area selection")
         try:
-            self.root.iconify()
+            self.root.iconify()  # minimize the root window
             self.selection_window = tk.Toplevel(self.root)
             self.selection_window.attributes('-fullscreen', True, '-alpha', 0.3)
             self.selection_window.configure(background='grey')
@@ -211,21 +287,68 @@ class ScreenshotApp:
             screenshot = ImageGrab.grab(bbox=(x1, y1, x2, y2))
 
             # Save temporarily
-            temp_path = f"screenshot_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
-            screenshot.save(temp_path)
-            logger.info(f"Screenshot saved temporarily as {temp_path}")
+            self.temp_path = f"screenshot_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+            screenshot.save(self.temp_path)
+            logger.info(f"Screenshot saved temporarily as {self.temp_path}")
 
-            # Upload to ImageKit
-            self.upload_to_imagekit(temp_path)
-
-            # Clean up
-            os.remove(temp_path)
-            logger.debug(f"Temporary file {temp_path} removed")
+            # Show preview
+            self.show_preview(self.temp_path)
 
         except Exception as e:
             error_msg = f"Error capturing area: {str(e)}\n{traceback.format_exc()}"
             logger.error(error_msg)
             messagebox.showerror("Error", f"Failed to capture area: {str(e)}")
+
+    def show_preview(self, file_path):
+        logger.info("Showing preview window")
+        self.preview_window = tk.Toplevel(self.root)
+        self.preview_window.title("Screenshot Preview")
+        self.preview_window.transient(self.root)
+        self.preview_window.grab_set()
+        self.preview_window.focus_force() # bring preview window to the front
+        self.preview_window.resizable(False, False) # prevent resizing
+
+        try:
+            img = ImageGrab.grab()
+            img = ImageGrab.grab(bbox = ImageGrab.grab().getbbox())
+            img = img.resize((int(img.width/2),int(img.height/2)),ImageGrab.Resampling.LANCZOS)
+            self.preview_image = ImageTk.PhotoImage(img)
+            preview_label = tk.Label(self.preview_window, image=self.preview_image)
+            preview_label.image = self.preview_image # keep a reference
+            preview_label.pack(padx=10, pady=10)
+
+            # Frame for buttons
+            button_frame = tk.Frame(self.preview_window)
+            button_frame.pack(pady=10)
+
+            upload_button = ttk.Button(button_frame, text="Upload", command=self.upload_and_close)
+            upload_button.pack(side=tk.LEFT, padx=5)
+
+            cancel_button = ttk.Button(button_frame, text="Cancel", command=self.cancel_preview)
+            cancel_button.pack(side=tk.LEFT, padx=5)
+
+        except Exception as e:
+             logger.error(f"Error showing preview window: {e}")
+             messagebox.showerror("Error", f"Failed to show preview: {str(e)}")
+
+    def upload_and_close(self):
+          if self.temp_path:
+                self.upload_to_imagekit(self.temp_path)
+                self.cleanup()
+          if self.preview_window:
+              self.preview_window.destroy()
+              self.preview_window = None
+    def cancel_preview(self):
+          self.cleanup()
+          if self.preview_window:
+             self.preview_window.destroy()
+             self.preview_window = None
+
+    def cleanup(self):
+        if self.temp_path and os.path.exists(self.temp_path):
+             os.remove(self.temp_path)
+             logger.debug(f"Temporary file {self.temp_path} removed")
+             self.temp_path = None
 
     def upload_to_imagekit(self, file_path):
         logger.info(f"Uploading file: {file_path}")
@@ -263,6 +386,7 @@ class ScreenshotApp:
         logger.info("Starting application main loop")
         self.root.mainloop()
 
+
 class ConfigDialog(tk.Toplevel):
     def __init__(self, parent):
         super().__init__(parent)
@@ -272,33 +396,32 @@ class ConfigDialog(tk.Toplevel):
         # Make dialog modal
         self.transient(parent)
         self.grab_set()
-        
+
         # Create form fields
         tk.Label(self, text="Private Key:").grid(row=0, column=0, padx=5, pady=5, sticky="e")
         self.private_key = tk.Entry(self, width=50)
         self.private_key.grid(row=0, column=1, padx=5, pady=5)
-        
+
         tk.Label(self, text="Public Key:").grid(row=1, column=0, padx=5, pady=5, sticky="e")
         self.public_key = tk.Entry(self, width=50)
         self.public_key.grid(row=1, column=1, padx=5, pady=5)
-        
+
         tk.Label(self, text="URL Endpoint:").grid(row=2, column=0, padx=5, pady=5, sticky="e")
         self.url_endpoint = tk.Entry(self, width=50)
         self.url_endpoint.grid(row=2, column=1, padx=5, pady=5)
-        
+
         # Buttons
         button_frame = tk.Frame(self)
         button_frame.grid(row=3, column=0, columnspan=2, pady=10)
-        
+
         tk.Button(button_frame, text="OK", command=self.ok_clicked).pack(side=tk.LEFT, padx=5)
         tk.Button(button_frame, text="Cancel", command=self.cancel_clicked).pack(side=tk.LEFT, padx=5)
-        
+
         # Center the dialog
         self.geometry("+%d+%d" % (parent.winfo_rootx() + 50, parent.winfo_rooty() + 50))
-        
         # Set focus on first field
         self.private_key.focus_set()
-        
+
     def ok_clicked(self):
         self.result = {
             'private_key': self.private_key.get(),
@@ -306,7 +429,7 @@ class ConfigDialog(tk.Toplevel):
             'url_endpoint': self.url_endpoint.get()
         }
         self.destroy()
-        
+
     def cancel_clicked(self):
         self.destroy()
 
