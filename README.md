@@ -67,6 +67,10 @@ A Python application that captures screenshots and uploads them to ImageKit.
 
    # Push the tag to GitHub
    git push origin v1.0.0
+   ```
+
+3. **Fix for Build Error**
+   - Replace the expression `${{TITLE}}` with `${{github.event.pull_request.title}}` in the GitHub Actions workflow file `.github/workflows/build-and-release.yml`.
 
 ## For Open Source Community Support
 
