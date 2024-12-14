@@ -46,7 +46,7 @@ class DrawingToolbar(ttk.Frame):
         self.current_tool = DrawingTool.SELECT
         self.on_tool_selected = on_tool_selected
         self.canvas = None
-        self.current_color = '#000000'
+        self.current_color = '#000000'  # Default black
         self.current_fill = ''
         
         # Define colors
@@ -57,6 +57,9 @@ class DrawingToolbar(ttk.Frame):
             'Green': '#32CD32',
             'Blue': '#1E90FF'
         }
+        
+        # Store reference to current color indicator
+        self.current_color_indicator = None
         
         self._create_toolbar()
 
@@ -90,8 +93,20 @@ class DrawingToolbar(ttk.Frame):
         color_frame = ttk.Frame(toolbar_frame)
         color_frame.pack(side=tk.TOP, fill=tk.X, pady=2)
 
-        # Add color label
-        ttk.Label(color_frame, text="Colors:").pack(side=tk.LEFT, padx=(2, 5))
+        # Add current color indicator
+        current_color_frame = ttk.Frame(color_frame)
+        current_color_frame.pack(side=tk.LEFT, padx=(2, 10))
+        
+        ttk.Label(current_color_frame, text="Current:").pack(side=tk.LEFT, padx=(0, 5))
+        
+        # Create current color indicator
+        self.current_color_indicator = tk.Canvas(current_color_frame, width=20, height=20,
+                                               highlightthickness=1, highlightbackground='#666666',
+                                               bg=self.current_color)
+        self.current_color_indicator.pack(side=tk.LEFT)
+
+        # Add color selection label
+        ttk.Label(color_frame, text="Colors:").pack(side=tk.LEFT, padx=(0, 5))
 
         # Create color selection boxes
         for color_name, color_code in self.colors.items():
@@ -142,6 +157,10 @@ class DrawingToolbar(ttk.Frame):
     def _select_color(self, color):
         """Handle color selection."""
         self.current_color = color
+        # Update current color indicator
+        if self.current_color_indicator:
+            self.current_color_indicator.configure(bg=color)
+            
         if self.canvas:
             self.canvas.current_color = color
             # Update selected elements
@@ -149,498 +168,184 @@ class DrawingToolbar(ttk.Frame):
                 element.color = color
             self.canvas._update_canvas()
 
+    def set_canvas(self, canvas):
+        """Set the associated drawing canvas."""
+        self.canvas = canvas
+        self.canvas.current_color = self.current_color  # Set initial color
+
 class DrawingCanvas(tk.Canvas):
     """Canvas for drawing and managing annotation elements."""
     
     def __init__(self, parent, image):
-        super().__init__(parent)
-        self.parent = parent
-        self.image = image
+        """Initialize drawing canvas.
+        
+        Args:
+            parent: Parent widget
+            image: PIL Image object to display
+        """
+        super().__init__(parent, bg='white', highlightthickness=0)
+        self.current_tool = DrawingTool.SELECT
+        self.current_color = '#000000'
+        self.current_width = 2
         self.elements = []
         self.selected_elements = set()
-        self.clipboard = []
-        self.undo_stack = []
-        self.redo_stack = []
-        self.current_tool = DrawingTool.SELECT
-        self.drawing = False
-        self.current_element = None
-        self.current_color = "#000000"
-        self.current_fill = None
-        self.current_width = 2
-        self._setup_canvas()
-        self._bind_events()
+        self.dragging = False
+        self.last_x = None
+        self.last_y = None
+        self.start_x = None
+        self.start_y = None
+        self.temp_element = None
+        self.original_image = image
+        self.freehand_points = []
+        
+        # Create PhotoImage for display
+        self.photo_image = ImageTk.PhotoImage(image)
+        self.create_image(0, 0, anchor='nw', image=self.photo_image)
+        self.configure(scrollregion=self.bbox('all'))
+        
+        # Bind mouse events
+        self.bind('<Button-1>', self._on_mouse_down)
+        self.bind('<B1-Motion>', self._on_mouse_drag)
+        self.bind('<ButtonRelease-1>', self._on_mouse_up)
+        self.bind('<Button-3>', self._on_right_click)
 
-    def _setup_canvas(self):
-        """Initialize the canvas with the background image."""
-        self.photo_image = ImageTk.PhotoImage(self.image)
-        self.create_image(0, 0, image=self.photo_image, anchor=tk.NW)
-
-    def _bind_events(self):
-        """Bind mouse events and keyboard shortcuts to canvas."""
-        # Mouse events
-        self.bind("<Button-1>", self._start_drawing)
-        self.bind("<B1-Motion>", self._draw)
-        self.bind("<ButtonRelease-1>", self._end_drawing)
+    def _on_mouse_down(self, event):
+        """Handle mouse down event."""
+        self.dragging = True
+        self.last_x = event.x
+        self.last_y = event.y
+        self.start_x = event.x
+        self.start_y = event.y
         
-        # Keyboard shortcuts
-        self.bind("<Control-z>", lambda e: self.undo())
-        self.bind("<Control-y>", lambda e: self.redo())
-        self.bind("<Control-c>", lambda e: self.copy_selected())
-        self.bind("<Control-v>", lambda e: self.paste())
-        self.bind("<Delete>", lambda e: self.delete_selected())
-        
-        # Selection events
-        self.bind("<Shift-Button-1>", self._add_to_selection)
-        self.bind("<Control-Button-1>", self._toggle_selection)
-        
-        # Element manipulation
-        self.bind("<Left>", lambda e: self.move_selected(-1, 0))
-        self.bind("<Right>", lambda e: self.move_selected(1, 0))
-        self.bind("<Up>", lambda e: self.move_selected(0, -1))
-        self.bind("<Down>", lambda e: self.move_selected(0, 1))
-        self.bind("<Control-bracketleft>", lambda e: self.rotate_selected(-5))
-        self.bind("<Control-bracketright>", lambda e: self.rotate_selected(5))
-        
-    def undo(self):
-        """Undo the last operation."""
-        if not self.undo_stack:
-            return
-        
-        action, element = self.undo_stack.pop()
-        if action == "add":
-            self.elements.remove(element)
-            self.redo_stack.append(("add", element))
-        elif action == "delete":
-            self.elements.append(element)
-            self.redo_stack.append(("delete", element))
-        elif action == "modify":
-            old_state, new_state = element
-            self._restore_element_state(old_state)
-            self.redo_stack.append(("modify", (new_state, old_state)))
-        
-        self._update_canvas()
-        
-    def redo(self):
-        """Redo the last undone operation."""
-        if not self.redo_stack:
-            return
-            
-        action, element = self.redo_stack.pop()
-        if action == "add":
-            self.elements.append(element)
-            self.undo_stack.append(("add", element))
-        elif action == "delete":
-            self.elements.remove(element)
-            self.undo_stack.append(("delete", element))
-        elif action == "modify":
-            old_state, new_state = element
-            self._restore_element_state(old_state)
-            self.undo_stack.append(("modify", (new_state, old_state)))
-            
-        self._update_canvas()
-        
-    def copy_selected(self):
-        """Copy selected elements to clipboard."""
-        self.clipboard = []
-        for element in self.selected_elements:
-            self.clipboard.append(self._clone_element(element))
-            
-    def paste(self):
-        """Paste elements from clipboard."""
-        if not self.clipboard:
-            return
-            
-        offset_x = 10
-        offset_y = 10
-        new_elements = []
-        
-        for element in self.clipboard:
-            new_element = self._clone_element(element)
-            new_element.x1 += offset_x
-            new_element.y1 += offset_y
-            if hasattr(new_element, 'x2'):
-                new_element.x2 += offset_x
-                new_element.y2 += offset_y
-            new_elements.append(new_element)
-            
-        self.elements.extend(new_elements)
-        self.undo_stack.append(("add", new_elements))
-        self._update_canvas()
-        
-    def move_selected(self, dx, dy):
-        """Move selected elements by the specified delta."""
-        if not self.selected_elements:
-            return
-            
-        for element in self.selected_elements:
-            if element.locked:
-                continue
-            element.x1 += dx
-            element.y1 += dy
-            if hasattr(element, 'x2'):
-                element.x2 += dx
-                element.y2 += dy
-                
-        self._update_canvas()
-        
-    def rotate_selected(self, angle_delta):
-        """Rotate selected elements by the specified angle."""
-        if not self.selected_elements:
-            return
-            
-        for element in self.selected_elements:
-            if element.locked:
-                continue
-            element.angle = (element.angle + angle_delta) % 360
-            
-        self._update_canvas()
-        
-    def bring_to_front(self, element):
-        """Move an element to the front layer."""
-        if element in self.elements:
-            max_layer = max((e.layer for e in self.elements), default=0)
-            element.layer = max_layer + 1
-            self._update_canvas()
-            
-    def send_to_back(self, element):
-        """Move an element to the back layer."""
-        if element in self.elements:
-            min_layer = min((e.layer for e in self.elements), default=0)
-            element.layer = min_layer - 1
-            self._update_canvas()
-            
-    def group_selected(self):
-        """Group selected elements together."""
-        if len(self.selected_elements) < 2:
-            return
-            
-        group = DrawingElement(DrawingTool.SELECT, 0, 0)
-        group.elements = list(self.selected_elements)
-        for element in group.elements:
-            self.elements.remove(element)
-        self.elements.append(group)
-        self.selected_elements = {group}
-        self._update_canvas()
-        
-    def ungroup_selected(self):
-        """Ungroup selected groups."""
-        new_elements = []
-        for element in self.selected_elements:
-            if hasattr(element, 'elements'):
-                self.elements.remove(element)
-                new_elements.extend(element.elements)
-        self.elements.extend(new_elements)
-        self.selected_elements = set(new_elements)
-        self._update_canvas()
-
-    def _start_drawing(self, event):
-        """Handle start of drawing operation."""
-        self.drawing = True
-        self.current_element = DrawingElement(self.current_tool, event.x, event.y)
-        
-    def _draw(self, event):
-        """Handle drawing motion."""
-        if not self.drawing:
-            return
-            
         if self.current_tool == DrawingTool.FREEHAND:
-            self.current_element.points.append((event.x, event.y))
+            self.freehand_points = [(event.x, event.y)]
+            self.temp_element = DrawingElement(DrawingTool.FREEHAND, event.x, event.y)
+            self.temp_element.points = self.freehand_points
+            self.temp_element.color = self.current_color
+            self.temp_element.width = self.current_width
+
+    def _on_mouse_drag(self, event):
+        """Handle mouse drag event."""
+        if not self.dragging:
+            return
+            
+        if self.current_tool == DrawingTool.SELECT:
+            self._select_element(event.x, event.y)
+        elif self.current_tool == DrawingTool.FREEHAND:
+            self.freehand_points.append((event.x, event.y))
+            self._update_canvas()
         else:
-            self.current_element.x2 = event.x
-            self.current_element.y2 = event.y
-            
-        self._update_preview()
-
-    def _end_drawing(self, event):
-        """Handle end of drawing operation."""
-        if not self.drawing:
-            return
-        self.drawing = False
-        if not self.current_element:
-            return
-            
-        # Handle text input for text-based tools
-        if self.current_element.tool_type in (DrawingTool.TEXT, DrawingTool.SPEECH_BUBBLE):
-            dialog = TextInputDialog(self)
-            self.wait_window(dialog)
-            if dialog.text:
-                self.current_element.text = dialog.text
-            else:
-                self.current_element = None
-                return
-        elif self.current_element.tool_type == DrawingTool.COUNTER:
-            # Find highest counter value and increment
-            max_counter = max((e.counter_value for e in self.elements 
-                            if e.tool_type == DrawingTool.COUNTER), default=0)
-            self.current_element.counter_value = max_counter + 1
-            
-        # Apply current style properties
-        self.current_element.color = self.current_color
-        self.current_element.width = self.current_width
-            
-        self.elements.append(self.current_element)
-        self.undo_stack.append(("add", self.current_element))
-        self.redo_stack.clear()
-        self.current_element = None
-        self._update_canvas()
-
-    def _update_preview(self):
-        """Update canvas preview during drawing."""
-        self._update_canvas()
-
-    def _add_to_selection(self, event):
-        """Add element to selection."""
-        element = self._find_element_at(event.x, event.y)
-        if element:
-            self.selected_elements.add(element)
+            if not self.temp_element:
+                self.temp_element = DrawingElement(self.current_tool, self.start_x, self.start_y)
+                self.temp_element.color = self.current_color
+                self.temp_element.width = self.current_width
+            self.temp_element.x2 = event.x
+            self.temp_element.y2 = event.y
             self._update_canvas()
+
+    def _on_mouse_up(self, event):
+        """Handle mouse up event."""
+        if not self.dragging:
+            return
             
-    def _toggle_selection(self, event):
-        """Toggle element selection."""
-        element = self._find_element_at(event.x, event.y)
-        if element:
-            if element in self.selected_elements:
-                self.selected_elements.remove(element)
-            else:
-                self.selected_elements.add(element)
-            self._update_canvas()
-            
-    def _find_element_at(self, x, y):
-        """Find the topmost element at the given coordinates."""
+        self.dragging = False
+        if self.current_tool != DrawingTool.SELECT:
+            if self.temp_element:
+                if self.current_tool == DrawingTool.FREEHAND:
+                    if len(self.freehand_points) > 1:
+                        self.elements.append(self.temp_element)
+                    self.freehand_points = []
+                else:
+                    self.elements.append(self.temp_element)
+                self.temp_element = None
+                self._update_canvas()
+
+    def _on_right_click(self, event):
+        """Handle right click event."""
+        self._select_element(event.x, event.y)
+
+    def _select_element(self, x, y):
+        """Select element at the given coordinates."""
         for element in reversed(self.elements):
             if self._is_point_in_element(element, x, y):
-                return element
-        return None
-        
-    def _is_point_in_element(self, element, x, y):
-        """Check if a point is within an element's bounds."""
-        x1, y1 = min(element.x1, element.x2), min(element.y1, element.y2)
-        x2, y2 = max(element.x1, element.x2), max(element.y1, element.y2)
-        
-        if element.tool_type in (DrawingTool.RECTANGLE, DrawingTool.ELLIPSE,
-                               DrawingTool.HIGHLIGHT, DrawingTool.PIXELATE,
-                               DrawingTool.GRAYSCALE):
-            return x1 <= x <= x2 and y1 <= y <= y2
-        elif element.tool_type in (DrawingTool.LINE, DrawingTool.ARROW):
-            # Check if point is near the line
-            d = self._point_to_line_distance(x, y, element.x1, element.y1,
-                                           element.x2, element.y2)
-            return d < 5  # 5 pixels tolerance
-        return False
-        
-    def _point_to_line_distance(self, x, y, x1, y1, x2, y2):
-        """Calculate distance from point to line segment."""
-        A = x - x1
-        B = y - y1
-        C = x2 - x1
-        D = y2 - y1
-        
-        dot = A * C + B * D
-        len_sq = C * C + D * D
-        
-        if len_sq == 0:
-            return math.sqrt(A * A + B * B)
-            
-        param = dot / len_sq
-        
-        if param < 0:
-            return math.sqrt((x - x1) * (x - x1) + (y - y1) * (y - y1))
-        elif param > 1:
-            return math.sqrt((x - x2) * (x - x2) + (y - y2) * (y - y2))
-        
-        return abs(A * D - C * B) / math.sqrt(len_sq)
+                self.selected_elements = {element}
+                break
+        self._update_canvas()
 
     def _update_canvas(self):
         """Redraw all elements on the canvas."""
-        # Clear and redraw background
+        # Clear canvas
         self.delete("all")
-        self.create_image(0, 0, image=self.photo_image, anchor=tk.NW)
+        self.create_image(0, 0, anchor='nw', image=self.photo_image)
         
-        # Redraw all elements
+        # Draw all completed elements
         for element in self.elements:
-            self._draw_element(element)
+            self._draw_element_on_canvas(element)
+        
+        # Draw current element being created
+        if self.temp_element:
+            self._draw_element_on_canvas(self.temp_element)
+        
+        # Draw selection indicators
+        for element in self.selected_elements:
+            x1, y1 = element.x1, element.y1
+            x2, y2 = getattr(element, 'x2', x1), getattr(element, 'y2', y1)
+            self.create_rectangle(
+                min(x1, x2) - 2, min(y1, y2) - 2,
+                max(x1, x2) + 2, max(y1, y2) + 2,
+                outline='#00FF00', width=1, dash=(2, 2)
+            )
 
-        # Draw current element if any
-        if self.current_element:
-            self._draw_element(self.current_element)
-
-    def _draw_element(self, element):
+    def _draw_element_on_canvas(self, element):
         """Draw a single element on the canvas."""
-        # Draw drop shadow if enabled
-        if hasattr(element, 'shadow_offset') and element.shadow_offset > 0:
-            self._draw_shadow(element)
-            
-        # Draw the main element
+        if element.tool_type in [DrawingTool.LINE, DrawingTool.FREEHAND]:
+            kwargs = {
+                'fill': element.color,
+                'width': element.width
+            }
+        else:
+            kwargs = {
+                'fill': '',
+                'outline': element.color,
+                'width': element.width
+            }
+        
         if element.tool_type == DrawingTool.RECTANGLE:
-            self.create_rectangle(element.x1, element.y1, element.x2, element.y2,
-                                outline=element.color, width=element.width,
-                                fill=element.fill)
+            self.create_rectangle(element.x1, element.y1, element.x2, element.y2, **kwargs)
         elif element.tool_type == DrawingTool.ELLIPSE:
-            self.create_oval(element.x1, element.y1, element.x2, element.y2,
-                           outline=element.color, width=element.width,
-                           fill=element.fill)
+            self.create_oval(element.x1, element.y1, element.x2, element.y2, **kwargs)
         elif element.tool_type == DrawingTool.LINE:
-            self.create_line(element.x1, element.y1, element.x2, element.y2,
-                           fill=element.color, width=element.width)
+            self.create_line(element.x1, element.y1, element.x2, element.y2, **kwargs)
         elif element.tool_type == DrawingTool.ARROW:
-            # Calculate arrow head points
-            angle = math.atan2(element.y2 - element.y1, element.x2 - element.x1)
-            head_length = min(20, ((element.x2 - element.x1)**2 + (element.y2 - element.y1)**2)**0.5 / 3)
-            head_width = head_length * 0.8
-            
-            # Arrow shaft
-            self.create_line(element.x1, element.y1, element.x2, element.y2,
-                           fill=element.color, width=element.width)
-            
-            # Arrow head
-            x3 = element.x2 - head_length * math.cos(angle - math.pi/6)
-            y3 = element.y2 - head_length * math.sin(angle - math.pi/6)
-            x4 = element.x2 - head_length * math.cos(angle + math.pi/6)
-            y4 = element.y2 - head_length * math.sin(angle + math.pi/6)
-            self.create_polygon(element.x2, element.y2, x3, y3, x4, y4,
-                              fill=element.color)
-            
+            self._draw_arrow(element.x1, element.y1, element.x2, element.y2, element.color, element.width)
         elif element.tool_type == DrawingTool.FREEHAND:
             if hasattr(element, 'points') and len(element.points) > 1:
-                self.create_line(element.points, fill=element.color, width=element.width)
-                
+                self.create_line(*[coord for point in element.points for coord in point], **kwargs)
         elif element.tool_type == DrawingTool.TEXT:
-            self.create_text(element.x1, element.y1, text=element.text,
-                           font=element.font, fill=element.color,
-                           anchor=tk.NW)
-            
-        elif element.tool_type == DrawingTool.SPEECH_BUBBLE:
-            # Draw rounded rectangle for speech bubble
-            rx = 20  # corner radius
-            points = [
-                element.x1 + rx, element.y1,
-                element.x2 - rx, element.y1,
-                element.x2, element.y1 + rx,
-                element.x2, element.y2 - rx,
-                element.x2 - rx, element.y2,
-                element.x1 + rx, element.y2,
-                element.x1, element.y2 - rx,
-                element.x1, element.y1 + rx,
-            ]
-            self.create_polygon(points, smooth=True,
-                              outline=element.color, width=element.width,
-                              fill=element.fill or "white")
-            
-            # Draw tail
-            tail_points = [
-                element.x1 + (element.x2 - element.x1) * 0.7,
-                element.y2,
-                element.x1 + (element.x2 - element.x1) * 0.5,
-                element.y2 + 20,
-                element.x1 + (element.x2 - element.x1) * 0.8,
-                element.y2,
-            ]
-            self.create_polygon(tail_points, fill=element.fill or "white",
-                              outline=element.color, width=element.width)
-            
-            if element.text:
-                self.create_text((element.x1 + element.x2) / 2,
-                               (element.y1 + element.y2) / 2,
-                               text=element.text, font=element.font,
-                               fill=element.color)
-                
-        elif element.tool_type == DrawingTool.COUNTER:
-            # Draw circle
-            r = 15
-            self.create_oval(element.x1 - r, element.y1 - r,
-                           element.x1 + r, element.y1 + r,
-                           outline=element.color, width=element.width,
-                           fill=element.fill or "white")
-            # Draw number
-            self.create_text(element.x1, element.y1,
-                           text=str(element.counter_value),
-                           font=element.font, fill=element.color)
-                           
-        elif element.tool_type == DrawingTool.HIGHLIGHT:
-            # Create semi-transparent highlight
-            highlight_color = self._with_alpha(element.color, 0.3)
-            self.create_rectangle(element.x1, element.y1, element.x2, element.y2,
-                                fill=highlight_color, outline="")
-                                
-        elif element.tool_type == DrawingTool.PIXELATE:
-            # Mark region for pixelation effect
-            self.create_rectangle(element.x1, element.y1, element.x2, element.y2,
-                                outline=element.color, width=1,
-                                dash=(4, 4))
-            # The actual pixelation is applied during image save
-            
-        elif element.tool_type == DrawingTool.GRAYSCALE:
-            # Mark region for grayscale effect
-            self.create_rectangle(element.x1, element.y1, element.x2, element.y2,
-                                outline=element.color, width=1,
-                                dash=(4, 4))
-            # The actual grayscale effect is applied during image save
+            if hasattr(element, 'text') and element.text:
+                self.create_text(element.x1, element.y1, text=element.text,
+                               fill=element.color, anchor='nw')
 
-    def _with_alpha(self, color: str, alpha: float) -> str:
-        """Convert color to semi-transparent version."""
-        # For Tkinter, we need to use standard color names or #RRGGBB format
-        # Convert hex color to RGB
-        r = int(color[1:3], 16)
-        g = int(color[3:5], 16)
-        b = int(color[5:7], 16)
+    def _draw_arrow(self, x1, y1, x2, y2, color, width):
+        """Draw an arrow line with arrowhead."""
+        # Draw the line
+        self.create_line(x1, y1, x2, y2, fill=color, width=width)
         
-        # Apply alpha by darkening the color (mixing with black)
-        r = int(r * (1 - alpha))
-        g = int(g * (1 - alpha))
-        b = int(b * (1 - alpha))
+        # Calculate arrowhead
+        angle = math.atan2(y2 - y1, x2 - x1)
+        arrow_size = 10 + width
         
-        # Return color in #RRGGBB format
-        return f'#{r:02x}{g:02x}{b:02x}'
+        # Calculate points for arrowhead
+        points = [
+            x2, y2,
+            x2 - arrow_size * math.cos(angle - math.pi/6),
+            y2 - arrow_size * math.sin(angle - math.pi/6),
+            x2 - arrow_size * math.cos(angle + math.pi/6),
+            y2 - arrow_size * math.sin(angle + math.pi/6)
+        ]
         
-    def _restore_element_state(self, state):
-        """Restore element state for undo/redo."""
-        for element in self.elements:
-            if state.get('id') == id(element):
-                for key, value in state.items():
-                    if key != 'id':
-                        setattr(element, key, value)
-                break
-
-    def _clone_element(self, element):
-        """Create a copy of a drawing element."""
-        clone = DrawingElement(element.tool_type, element.x1, element.y1,
-                             element.x2, element.y2)
-        # Copy all attributes
-        for attr in vars(element):
-            if attr not in ('x1', 'y1', 'x2', 'y2', 'tool_type'):
-                setattr(clone, attr, getattr(element, attr))
-        return clone
-        
-    def _draw_shadow(self, element):
-        """Draw a shadow effect for the given element."""
-        # Shadow effects disabled
-        pass
-        # Shadow properties
-        shadow_color = '#000000'
-        shadow_alpha = 0.3
-        
-        # Get element coordinates and properties
-        x1, y1 = element.x1 + element.shadow_offset, element.y1 + element.shadow_offset
-        if hasattr(element, 'x2'):
-            x2, y2 = element.x2 + element.shadow_offset, element.y2 + element.shadow_offset
-        else:
-            x2, y1 = x1, y1
-            
-        # Apply shadow based on element type
-        shadow_kwargs = {
-            'fill': self._with_alpha(shadow_color, shadow_alpha)
-        }
-        
-        if element.tool_type == DrawingTool.RECTANGLE:
-            self.create_rectangle(x1, y1, x2, y2, **shadow_kwargs)
-        elif element.tool_type == DrawingTool.ELLIPSE:
-            self.create_oval(x1, y1, x2, y2, **shadow_kwargs)
-        elif element.tool_type in (DrawingTool.LINE, DrawingTool.ARROW):
-            shadow_kwargs['width'] = element.width
-            self.create_line(x1, y1, x2, y2, **shadow_kwargs)
-        elif element.tool_type == DrawingTool.TEXT:
-            self.create_text(x1, y1, text=element.text, fill=self._with_alpha(shadow_color, shadow_alpha),
-                           font=element.font, anchor='nw')
+        # Draw arrowhead
+        self.create_polygon(points, fill=color, outline=color)
 
 class TextInputDialog(tk.Toplevel):
     """Dialog for entering text."""

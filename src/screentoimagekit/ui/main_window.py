@@ -208,12 +208,13 @@ class MainWindow:
                 self._handle_upload(temp_path)
             else:
                 # Show preview window
-                PreviewWindow(
+                preview = PreviewWindow(
                     self.root,
                     resized_image,
                     lambda: self._handle_upload(temp_path),
                     lambda: self._handle_cancel(temp_path)
                 )
+                preview.show()
         except Exception as e:
             logger.error(f"Error in full screen capture: {e}")
             messagebox.showerror("Error", f"Failed to capture full screen: {str(e)}")
@@ -230,12 +231,13 @@ class MainWindow:
                 self._handle_upload(temp_path)
             else:
                 # Show preview window
-                PreviewWindow(
+                preview = PreviewWindow(
                     self.root,
                     resized_image,
                     lambda: self._handle_upload(temp_path),
                     lambda: self._handle_cancel(temp_path)
                 )
+                preview.show()
         except Exception as e:
             logger.error(f"Error handling selected area: {e}")
             messagebox.showerror("Error", f"Failed to process selection: {str(e)}")
