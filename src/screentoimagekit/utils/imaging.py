@@ -86,3 +86,22 @@ class ImageHandler:
                 logger.error(f"Error removing temporary file: {e}")
                 return False
         return True  # Return True if file doesn't exist
+
+    @staticmethod
+    def cleanup_all_temp_files():
+        """Clean up all temporary screenshot files in the root directory."""
+        try:
+            import glob
+            import os
+            # Find all screenshot files in the root directory
+            screenshot_files = glob.glob("screenshot_*.png")
+            for file_path in screenshot_files:
+                try:
+                    os.remove(file_path)
+                    logger.debug(f"Removed temporary file: {file_path}")
+                except Exception as e:
+                    logger.error(f"Error removing temporary file {file_path}: {e}")
+            return True
+        except Exception as e:
+            logger.error(f"Error during cleanup of temporary files: {e}")
+            return False

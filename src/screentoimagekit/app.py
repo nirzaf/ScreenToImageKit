@@ -17,9 +17,12 @@ class ScreenToImageKit:
         self._setup_logging()
         logger.info("Initializing ScreenToImageKit")
         
+        # Clean up any leftover temporary files
+        self.image_handler = ImageHandler()
+        self.image_handler.cleanup_all_temp_files()
+        
         # Initialize components
         self.config_manager = ConfigManager()
-        self.image_handler = ImageHandler()
         self.imagekit_service = ImageKitService()
         
         # Create main window
@@ -84,6 +87,10 @@ class ScreenToImageKit:
     def cleanup(self):
         """Clean up application resources."""
         try:
+            # Clean up temporary files
+            self.image_handler.cleanup_all_temp_files()
+            
+            # Stop system tray
             if self.system_tray:
                 self.system_tray.stop()
         except Exception as e:
