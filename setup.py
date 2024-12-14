@@ -4,7 +4,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="screentoimagekit",
-    version="1.1.0",  # Updated version for new features
+    version="1.1.0",
     packages=find_packages(where="src"),
     package_dir={"": "src"},
     install_requires=[
@@ -14,7 +14,8 @@ setup(
         "cryptography",
         "pystray",
         "python-dotenv",
-        "keyboard"  # Added for global hotkeys
+        "keyboard",
+        "google-generativeai",  # Added for Gemini AI integration
     ],
     entry_points={
         "console_scripts": [
