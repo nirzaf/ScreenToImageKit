@@ -5,6 +5,7 @@ import platform
 from src.screentoimagekit.config import ConfigManager
 from src.screentoimagekit.utils.imaging import ImageHandler
 from src.screentoimagekit.services.imagekit_service import ImageKitService
+from src.screentoimagekit.services.temp_file_service import TempFileService
 from src.screentoimagekit.ui.main_window import MainWindow
 from src.screentoimagekit.ui.system_tray import SystemTray
 
@@ -12,18 +13,20 @@ logger = logging.getLogger(__name__)
 
 class ScreenToImageKit:
     """Main application class."""
-
+    
     def __init__(self):
+        """Initialize the application."""
         self._setup_logging()
         logger.info("Initializing ScreenToImageKit")
         
-        # Clean up any leftover temporary files
-        self.image_handler = ImageHandler()
-        self.image_handler.cleanup_all_temp_files()
-        
-        # Initialize components
+        # Initialize services
+        self.temp_file_service = TempFileService()
+        self.image_handler = ImageHandler(self.temp_file_service)
         self.config_manager = ConfigManager()
         self.imagekit_service = ImageKitService()
+        
+        # Clean up any leftover temporary files
+        self.temp_file_service.cleanup_temp_files()
         
         # Create main window
         self.main_window = MainWindow(
@@ -88,7 +91,7 @@ class ScreenToImageKit:
         """Clean up application resources."""
         try:
             # Clean up temporary files
-            self.image_handler.cleanup_all_temp_files()
+            self.temp_file_service.cleanup_temp_files()
             
             # Stop system tray
             if self.system_tray:
