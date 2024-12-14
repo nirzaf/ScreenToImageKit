@@ -211,7 +211,7 @@ class MainWindow:
                 preview = PreviewWindow(
                     self.root,
                     resized_image,
-                    lambda: self._handle_upload(temp_path),
+                    lambda annotated_path=None: self._handle_upload(annotated_path or temp_path),
                     lambda: self._handle_cancel(temp_path)
                 )
                 preview.show()
@@ -234,7 +234,7 @@ class MainWindow:
                 preview = PreviewWindow(
                     self.root,
                     resized_image,
-                    lambda: self._handle_upload(temp_path),
+                    lambda annotated_path=None: self._handle_upload(annotated_path or temp_path),
                     lambda: self._handle_cancel(temp_path)
                 )
                 preview.show()

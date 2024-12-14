@@ -81,9 +81,13 @@ class PreviewWindow(tk.Toplevel):
             # Get the annotated image before uploading
             annotated_image = self.canvas.get_annotated_image()
             # Save the annotated image temporarily
-            self.image = annotated_image
-            # Call the upload callback
-            self.on_upload()
+            import os
+            import tempfile
+            temp_dir = tempfile.gettempdir()
+            temp_path = os.path.join(temp_dir, "annotated_screenshot.png")
+            annotated_image.save(temp_path, "PNG")
+            # Call the upload callback with the new temp path
+            self.on_upload(temp_path)
         self.destroy()
 
     def get_image(self):
