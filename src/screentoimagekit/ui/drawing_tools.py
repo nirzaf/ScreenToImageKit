@@ -49,10 +49,11 @@ class DrawingToolbar(ttk.Frame):
         self.current_color = '#000000'  # Default black
         self.current_fill = ''
         
-        # Define colors
+        # Define colors with red added
         self.colors = {
             'Black': '#000000',
             'White': '#FFFFFF',
+            'Red': '#FF0000',
             'Yellow': '#FFD700',
             'Green': '#32CD32',
             'Blue': '#1E90FF'
@@ -151,8 +152,32 @@ class DrawingToolbar(ttk.Frame):
     def _select_tool(self, tool):
         """Handle tool selection."""
         self.current_tool = tool
+        if tool == DrawingTool.TEXT:
+            self._show_text_dialog()
         if self.on_tool_selected:
             self.on_tool_selected(tool)
+
+    def _show_text_dialog(self):
+        """Show text input dialog and create text element."""
+        if not self.canvas:
+            return
+            
+        dialog = TextInputDialog(self)
+        self.wait_window(dialog)
+        
+        if dialog.text:
+            # Create text element at center of visible canvas area
+            canvas = self.canvas
+            x = canvas.winfo_width() // 2
+            y = canvas.winfo_height() // 2
+            
+            element = DrawingElement(DrawingTool.TEXT, x, y)
+            element.text = dialog.text
+            element.color = self.current_color
+            element.width = self.canvas.current_width
+            
+            self.canvas.elements.append(element)
+            self.canvas._update_canvas()
 
     def _select_color(self, color):
         """Handle color selection."""
@@ -200,8 +225,11 @@ class DrawingCanvas(tk.Canvas):
         
         # Create PhotoImage for display
         self.photo_image = ImageTk.PhotoImage(image)
+        
+        # Configure canvas size and scrolling
+        self.configure(width=image.width, height=image.height)
         self.create_image(0, 0, anchor='nw', image=self.photo_image)
-        self.configure(scrollregion=self.bbox('all'))
+        self.configure(scrollregion=(0, 0, image.width, image.height))
         
         # Bind mouse events
         self.bind('<Button-1>', self._on_mouse_down)
@@ -346,6 +374,59 @@ class DrawingCanvas(tk.Canvas):
         
         # Draw arrowhead
         self.create_polygon(points, fill=color, outline=color)
+
+    def get_annotated_image(self):
+        """Get the image with all annotations rendered on it."""
+        # Create a copy of the original image to draw on
+        annotated_image = self.original_image.copy()
+        draw = ImageDraw.Draw(annotated_image)
+        
+        # Draw all elements on the image
+        for element in self.elements:
+            # Ensure coordinates are properly ordered
+            x1, x2 = min(element.x1, element.x2), max(element.x1, element.x2)
+            y1, y2 = min(element.y1, element.y2), max(element.y1, element.y2)
+            
+            if element.tool_type == DrawingTool.RECTANGLE:
+                draw.rectangle([x1, y1, x2, y2],
+                             outline=element.color, width=element.width)
+            elif element.tool_type == DrawingTool.ELLIPSE:
+                draw.ellipse([x1, y1, x2, y2],
+                            outline=element.color, width=element.width)
+            elif element.tool_type == DrawingTool.LINE:
+                draw.line([element.x1, element.y1, element.x2, element.y2],
+                         fill=element.color, width=element.width)
+            elif element.tool_type == DrawingTool.ARROW:
+                # Draw arrow line
+                draw.line([element.x1, element.y1, element.x2, element.y2],
+                         fill=element.color, width=element.width)
+                # Calculate arrow head
+                angle = math.atan2(element.y2 - element.y1, element.x2 - element.x1)
+                arrow_size = 10 + element.width
+                points = [
+                    element.x2,
+                    element.y2,
+                    int(element.x2 - arrow_size * math.cos(angle - math.pi/6)),
+                    int(element.y2 - arrow_size * math.sin(angle - math.pi/6)),
+                    int(element.x2 - arrow_size * math.cos(angle + math.pi/6)),
+                    int(element.y2 - arrow_size * math.sin(angle + math.pi/6))
+                ]
+                draw.polygon(points, fill=element.color)
+            elif element.tool_type == DrawingTool.FREEHAND:
+                if hasattr(element, 'points') and len(element.points) > 1:
+                    # Convert points to flat list for PIL
+                    points = []
+                    for point in element.points:
+                        points.extend(point)
+                    if len(points) >= 4:  # Need at least 2 points (4 coordinates)
+                        draw.line(points, fill=element.color, width=element.width)
+            elif element.tool_type == DrawingTool.TEXT:
+                if hasattr(element, 'text') and element.text:
+                    draw.text((element.x1, element.y1), element.text,
+                             fill=element.color, font=None)
+    
+        return annotated_image
+
 
 class TextInputDialog(tk.Toplevel):
     """Dialog for entering text."""

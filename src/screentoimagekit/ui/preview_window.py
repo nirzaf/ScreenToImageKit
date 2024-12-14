@@ -28,20 +28,30 @@ class PreviewWindow(tk.Toplevel):
         self.photo_image = None
         self.image = None  # Store the PIL image
         
-        # Create toolbar and canvas
-        self.toolbar = DrawingToolbar(self, self._on_tool_selected)
-        self.toolbar.pack(side=tk.TOP, fill=tk.X)
+        # Create top frame for toolbar and upload button
+        top_frame = ttk.Frame(self)
+        top_frame.pack(side=tk.TOP, fill=tk.X)
         
-        # Create scrollable canvas frame
+        # Create toolbar
+        self.toolbar = DrawingToolbar(top_frame, self._on_tool_selected)
+        self.toolbar.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        # Add upload button
+        upload_button = ttk.Button(top_frame, text="Upload", command=self._handle_upload)
+        upload_button.pack(side=tk.RIGHT, padx=10, pady=5)
+        
+        # Create scrollable canvas frame with proper weight configuration
         self.canvas_frame = ttk.Frame(self)
         self.canvas_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+        self.canvas_frame.grid_rowconfigure(0, weight=1)
+        self.canvas_frame.grid_columnconfigure(0, weight=1)
         
         # Create scrollbars
         self.h_scrollbar = ttk.Scrollbar(self.canvas_frame, orient=tk.HORIZONTAL)
         self.v_scrollbar = ttk.Scrollbar(self.canvas_frame, orient=tk.VERTICAL)
-        self.h_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
-        self.v_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        
+        self.h_scrollbar.grid(row=1, column=0, sticky='ew')
+        self.v_scrollbar.grid(row=0, column=1, sticky='ns')
+
         # Process the input image
         if isinstance(image, str):
             self._load_image(image)
@@ -52,7 +62,7 @@ class PreviewWindow(tk.Toplevel):
         self.canvas = DrawingCanvas(self.canvas_frame, self.image)
         self.canvas.configure(xscrollcommand=self.h_scrollbar.set,
                             yscrollcommand=self.v_scrollbar.set)
-        self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.canvas.grid(row=0, column=0, sticky='nsew')
         
         # Configure scrollbars
         self.h_scrollbar.configure(command=self.canvas.xview)
@@ -64,6 +74,21 @@ class PreviewWindow(tk.Toplevel):
         # Configure window
         self.protocol("WM_DELETE_WINDOW", self._on_closing)
         self.state('zoomed')
+
+    def _handle_upload(self):
+        """Handle upload button click."""
+        if self.on_upload:
+            # Get the annotated image before uploading
+            annotated_image = self.canvas.get_annotated_image()
+            # Save the annotated image temporarily
+            self.image = annotated_image
+            # Call the upload callback
+            self.on_upload()
+        self.destroy()
+
+    def get_image(self):
+        """Get the current image (with annotations if any)."""
+        return self.image
 
     def _load_image(self, image_path):
         """Load and display the image from file."""
@@ -86,20 +111,27 @@ class PreviewWindow(tk.Toplevel):
     def _scale_image(self):
         """Scale the image to fit the window while maintaining aspect ratio."""
         try:
-            # Scale the image to fit the window while maintaining aspect ratio
+            # Get the screen dimensions
             screen_width = self.winfo_screenwidth()
             screen_height = self.winfo_screenheight()
             
-            target_width = int(screen_width * 0.85)
-            target_height = int(screen_height * 0.85)
-            width_ratio = target_width / self.image.width
-            height_ratio = target_height / self.image.height
+            # Calculate available space (accounting for window decorations and toolbar)
+            available_width = screen_width - 50  # Account for scrollbar and padding
+            available_height = screen_height - 100  # Account for toolbar and window decorations
+            
+            # Calculate scaling factors
+            width_ratio = available_width / self.image.width
+            height_ratio = available_height / self.image.height
+            
+            # Use the smaller ratio to maintain aspect ratio while fitting the screen
             scale_factor = min(width_ratio, height_ratio)
             
-            if scale_factor < 1:
-                new_width = int(self.image.width * scale_factor)
-                new_height = int(self.image.height * scale_factor)
-                self.image = self.image.resize((new_width, new_height), Image.LANCZOS)
+            # Calculate new dimensions
+            new_width = int(self.image.width * scale_factor)
+            new_height = int(self.image.height * scale_factor)
+            
+            # Resize the image
+            self.image = self.image.resize((new_width, new_height), Image.LANCZOS)
         except Exception as e:
             logger.error(f"Error scaling image: {e}")
             self.destroy()
@@ -123,4 +155,4 @@ class PreviewWindow(tk.Toplevel):
         """Get the image with annotations."""
         if self.canvas:
             return self.canvas.get_annotated_image()
-        return None
+        return self.image
