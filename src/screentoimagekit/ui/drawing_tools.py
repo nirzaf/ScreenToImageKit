@@ -18,9 +18,6 @@ class DrawingTool(Enum):
     TEXT = auto()
     SPEECH_BUBBLE = auto()
     COUNTER = auto()
-    HIGHLIGHT = auto()
-    PIXELATE = auto()
-    GRAYSCALE = auto()
 
 class DrawingElement:
     """Base class for drawing elements."""
@@ -37,7 +34,6 @@ class DrawingElement:
         self.text = ""
         self.angle = 0
         self.locked = False
-        self.layer = 0
         self.points = []  # For freehand drawing
         self.counter_value = 1  # For counter tool
         self.effect_strength = 10  # For pixelate/blur effects
@@ -50,87 +46,92 @@ class DrawingToolbar(ttk.Frame):
         self.current_tool = DrawingTool.SELECT
         self.on_tool_selected = on_tool_selected
         self.canvas = None
-        # Initialize default colors to black
         self.current_color = '#000000'
-        self.current_fill = ''  # Empty string for no fill
+        self.current_fill = ''
+        
+        # Define colors
+        self.colors = {
+            'Black': '#000000',
+            'White': '#FFFFFF',
+            'Yellow': '#FFD700',
+            'Green': '#32CD32',
+            'Blue': '#1E90FF'
+        }
+        
         self._create_toolbar()
 
     def _create_toolbar(self):
         """Create the drawing toolbar interface."""
-        # Tool selection buttons
-        tools_frame = ttk.LabelFrame(self, text="Drawing Tools")
-        tools_frame.pack(side=tk.LEFT, padx=5, pady=5, fill=tk.Y)
+        # Main toolbar frame
+        toolbar_frame = ttk.Frame(self)
+        toolbar_frame.pack(side=tk.TOP, fill=tk.X, padx=2, pady=2)
 
-        self._add_tool_button(tools_frame, "Select", DrawingTool.SELECT)
-        self._add_tool_button(tools_frame, "Rectangle", DrawingTool.RECTANGLE)
-        self._add_tool_button(tools_frame, "Ellipse", DrawingTool.ELLIPSE)
-        self._add_tool_button(tools_frame, "Line", DrawingTool.LINE)
-        self._add_tool_button(tools_frame, "Arrow", DrawingTool.ARROW)
-        self._add_tool_button(tools_frame, "Freehand", DrawingTool.FREEHAND)
+        # Tools frame
+        tools_frame = ttk.Frame(toolbar_frame)
+        tools_frame.pack(side=tk.TOP, fill=tk.X, pady=(0, 5))
 
-        # Text tools
-        text_frame = ttk.LabelFrame(self, text="Text Tools")
-        text_frame.pack(side=tk.LEFT, padx=5, pady=5, fill=tk.Y)
+        # Add tool buttons horizontally
+        tools = [
+            ("Rectangle", DrawingTool.RECTANGLE),
+            ("Ellipse", DrawingTool.ELLIPSE),
+            ("Line", DrawingTool.LINE),
+            ("Arrow", DrawingTool.ARROW),
+            ("Freehand", DrawingTool.FREEHAND),
+            ("Text", DrawingTool.TEXT)
+        ]
+
+        # Create tool buttons with consistent size and spacing
+        for text, tool in tools:
+            btn = ttk.Button(tools_frame, text=text, width=10,
+                           command=lambda t=tool: self._select_tool(t))
+            btn.pack(side=tk.LEFT, padx=2)
+
+        # Color selection frame
+        color_frame = ttk.Frame(toolbar_frame)
+        color_frame.pack(side=tk.TOP, fill=tk.X, pady=2)
+
+        # Add color label
+        ttk.Label(color_frame, text="Colors:").pack(side=tk.LEFT, padx=(2, 5))
+
+        # Create color selection boxes
+        for color_name, color_code in self.colors.items():
+            self._create_color_button(color_frame, color_code, color_name)
+
+    def _create_color_button(self, parent, color, name):
+        """Create a color selection button."""
+        # Create a frame for the color box with white border
+        frame = ttk.Frame(parent, style='ColorBox.TFrame')
+        frame.pack(side=tk.LEFT, padx=2)
         
-        self._add_tool_button(text_frame, "Text", DrawingTool.TEXT)
-        self._add_tool_button(text_frame, "Speech", DrawingTool.SPEECH_BUBBLE)
-        self._add_tool_button(text_frame, "Counter", DrawingTool.COUNTER)
-
-        # Effects frame
-        effects_frame = ttk.LabelFrame(self, text="Effects")
-        effects_frame.pack(side=tk.LEFT, padx=5, pady=5, fill=tk.Y)
-
-        self._add_tool_button(effects_frame, "Highlight", DrawingTool.HIGHLIGHT)
-        self._add_tool_button(effects_frame, "Pixelate", DrawingTool.PIXELATE)
-        self._add_tool_button(effects_frame, "Grayscale", DrawingTool.GRAYSCALE)
-
-        # Properties frame
-        props_frame = ttk.LabelFrame(self, text="Properties")
-        props_frame.pack(side=tk.LEFT, padx=5, pady=5, fill=tk.Y)
-
-        # Color picker
-        ttk.Button(props_frame, text="Color...", command=self._pick_color).pack(pady=2)
+        # Create canvas for color box
+        canvas = tk.Canvas(frame, width=20, height=20, highlightthickness=1,
+                         highlightbackground='#666666', bg=color)
+        canvas.pack(padx=1, pady=1)
         
-        # Line width
-        width_frame = ttk.Frame(props_frame)
-        width_frame.pack(pady=2)
-        ttk.Label(width_frame, text="Width:").pack(side=tk.LEFT)
-        self.width_var = tk.StringVar(value="2")
-        width_spin = ttk.Spinbox(width_frame, from_=1, to=20, width=3, 
-                                textvariable=self.width_var,
-                                command=self._width_changed)
-        width_spin.pack(side=tk.LEFT)
-
-        # Fill color
-        ttk.Button(props_frame, text="Fill Color...", command=self._pick_fill).pack(pady=2)
-
-        # Shadow toggle
-        self.shadow_var = tk.BooleanVar(value=False)
-        # Shadow effects disabled
-        self.shadow_var.set(False)
-
-        # Layer controls
-        layer_frame = ttk.LabelFrame(self, text="Layers")
-        layer_frame.pack(side=tk.LEFT, padx=5, pady=5, fill=tk.Y)
+        # Bind click event
+        canvas.bind('<Button-1>', lambda e, c=color: self._select_color(c))
         
-        ttk.Button(layer_frame, text="Bring Forward",
-                  command=lambda: self.canvas and self.canvas.bring_to_front(
-                      next(iter(self.canvas.selected_elements), None))).pack(pady=2)
-        ttk.Button(layer_frame, text="Send Back",
-                  command=lambda: self.canvas and self.canvas.send_to_back(
-                      next(iter(self.canvas.selected_elements), None))).pack(pady=2)
-        ttk.Button(layer_frame, text="Group",
-                  command=lambda: self.canvas and self.canvas.group_selected()).pack(pady=2)
-        ttk.Button(layer_frame, text="Ungroup",
-                  command=lambda: self.canvas and self.canvas.ungroup_selected()).pack(pady=2)
-        ttk.Button(layer_frame, text="Lock",
-                  command=lambda: self.canvas and self._toggle_lock()).pack(pady=2)
+        # Add tooltip
+        self._add_tooltip(canvas, name)
 
-    def _add_tool_button(self, parent, text, tool):
-        """Add a tool selection button to the toolbar."""
-        btn = ttk.Button(parent, text=text, 
-                        command=lambda t=tool: self._select_tool(t))
-        btn.pack(pady=2)
+    def _add_tooltip(self, widget, text):
+        """Add tooltip to widget."""
+        def show_tooltip(event):
+            tooltip = tk.Toplevel()
+            tooltip.wm_overrideredirect(True)
+            tooltip.wm_geometry(f"+{event.x_root+10}+{event.y_root+10}")
+            
+            label = ttk.Label(tooltip, text=text, background="#ffffe0", 
+                            relief='solid', borderwidth=1)
+            label.pack()
+            
+            def hide_tooltip():
+                tooltip.destroy()
+            
+            widget.tooltip = tooltip
+            widget.bind('<Leave>', lambda e: hide_tooltip())
+            
+        widget.bind('<Enter>', show_tooltip)
 
     def _select_tool(self, tool):
         """Handle tool selection."""
@@ -138,75 +139,15 @@ class DrawingToolbar(ttk.Frame):
         if self.on_tool_selected:
             self.on_tool_selected(tool)
 
-    def _pick_color(self):
-        """Open color picker dialog."""
-        color = colorchooser.askcolor(title="Choose Color")
-        if color[1]:  # Use the hex color value
-            self.current_color = color[1]
-            if self.canvas:
-                self.canvas.current_color = color[1]
-                for element in self.canvas.selected_elements:
-                    element.color = color[1]
-                self.canvas._update_canvas()
-
-    def _pick_fill(self):
-        """Set transparent fill for selected elements."""
-        self.current_fill = None
+    def _select_color(self, color):
+        """Handle color selection."""
+        self.current_color = color
         if self.canvas:
-            self.canvas.current_fill = None
+            self.canvas.current_color = color
+            # Update selected elements
             for element in self.canvas.selected_elements:
-                element.fill = None
+                element.color = color
             self.canvas._update_canvas()
-
-    def _width_changed(self):
-        """Handle line width change."""
-        if self.canvas:
-            width = int(self.width_var.get())
-            for element in self.canvas.selected_elements:
-                element.width = width
-            self.canvas.current_width = width
-            self.canvas._update_canvas()
-
-    def _toggle_shadow(self):
-        """Toggle drop shadow for selected elements."""
-        if self.canvas:
-            for element in self.canvas.selected_elements:
-                element.shadow_offset = 3 if self.shadow_var.get() else 0
-            self.canvas._update_canvas()
-
-    def _toggle_lock(self):
-        """Toggle lock state for selected elements."""
-        if self.canvas:
-            for element in self.canvas.selected_elements:
-                element.locked = not element.locked
-            self.canvas._update_canvas()
-
-class TextInputDialog(tk.Toplevel):
-    """Dialog for entering text."""
-    
-    def __init__(self, parent):
-        super().__init__(parent)
-        self.title("Enter Text")
-        self.text = None
-        self._create_dialog()
-        
-    def _create_dialog(self):
-        """Create dialog UI."""
-        self.text_var = tk.StringVar()
-        entry = ttk.Entry(self, textvariable=self.text_var)
-        entry.pack(padx=10, pady=5)
-        entry.focus_set()
-        
-        btn_frame = ttk.Frame(self)
-        btn_frame.pack(pady=5)
-        
-        ttk.Button(btn_frame, text="OK", command=self._handle_ok).pack(side=tk.LEFT, padx=5)
-        ttk.Button(btn_frame, text="Cancel", command=self.destroy).pack(side=tk.LEFT)
-        
-    def _handle_ok(self):
-        """Handle OK button click."""
-        self.text = self.text_var.get()
-        self.destroy()
 
 class DrawingCanvas(tk.Canvas):
     """Canvas for drawing and managing annotation elements."""
@@ -447,72 +388,6 @@ class DrawingCanvas(tk.Canvas):
         """Update canvas preview during drawing."""
         self._update_canvas()
 
-    def _draw_shadow(self, element):
-        """Draw a shadow effect for the given element."""
-        # Shadow effects disabled
-        pass
-        # Shadow properties
-        shadow_color = '#000000'
-        shadow_alpha = 0.3
-        
-        # Get element coordinates and properties
-        x1, y1 = element.x1 + element.shadow_offset, element.y1 + element.shadow_offset
-        if hasattr(element, 'x2'):
-            x2, y2 = element.x2 + element.shadow_offset, element.y2 + element.shadow_offset
-        else:
-            x2, y2 = x1, y1
-            
-        # Apply shadow based on element type
-        shadow_kwargs = {
-            'fill': self._with_alpha(shadow_color, shadow_alpha)
-        }
-        
-        if element.tool_type == DrawingTool.RECTANGLE:
-            self.create_rectangle(x1, y1, x2, y2, **shadow_kwargs)
-        elif element.tool_type == DrawingTool.ELLIPSE:
-            self.create_oval(x1, y1, x2, y2, **shadow_kwargs)
-        elif element.tool_type in (DrawingTool.LINE, DrawingTool.ARROW):
-            shadow_kwargs['width'] = element.width
-            self.create_line(x1, y1, x2, y2, **shadow_kwargs)
-        elif element.tool_type == DrawingTool.TEXT:
-            self.create_text(x1, y1, text=element.text, fill=self._with_alpha(shadow_color, shadow_alpha),
-                           font=element.font, anchor='nw')
-
-    def _with_alpha(self, color: str, alpha: float) -> str:
-        """Convert color to semi-transparent version."""
-        # For Tkinter, we need to use standard color names or #RRGGBB format
-        # Convert hex color to RGB
-        r = int(color[1:3], 16)
-        g = int(color[3:5], 16)
-        b = int(color[5:7], 16)
-        
-        # Apply alpha by darkening the color (mixing with black)
-        r = int(r * (1 - alpha))
-        g = int(g * (1 - alpha))
-        b = int(b * (1 - alpha))
-        
-        # Return color in #RRGGBB format
-        return f'#{r:02x}{g:02x}{b:02x}'
-        
-    def _restore_element_state(self, state):
-        """Restore element state for undo/redo."""
-        for element in self.elements:
-            if state.get('id') == id(element):
-                for key, value in state.items():
-                    if key != 'id':
-                        setattr(element, key, value)
-                break
-
-    def _clone_element(self, element):
-        """Create a copy of a drawing element."""
-        clone = DrawingElement(element.tool_type, element.x1, element.y1,
-                             element.x2, element.y2)
-        # Copy all attributes
-        for attr in vars(element):
-            if attr not in ('x1', 'y1', 'x2', 'y2', 'tool_type'):
-                setattr(clone, attr, getattr(element, attr))
-        return clone
-        
     def _add_to_selection(self, event):
         """Add element to selection."""
         element = self._find_element_at(event.x, event.y)
@@ -582,7 +457,7 @@ class DrawingCanvas(tk.Canvas):
         self.create_image(0, 0, image=self.photo_image, anchor=tk.NW)
         
         # Redraw all elements
-        for element in sorted(self.elements, key=lambda e: e.layer):
+        for element in self.elements:
             self._draw_element(element)
 
         # Draw current element if any
@@ -700,3 +575,96 @@ class DrawingCanvas(tk.Canvas):
                                 outline=element.color, width=1,
                                 dash=(4, 4))
             # The actual grayscale effect is applied during image save
+
+    def _with_alpha(self, color: str, alpha: float) -> str:
+        """Convert color to semi-transparent version."""
+        # For Tkinter, we need to use standard color names or #RRGGBB format
+        # Convert hex color to RGB
+        r = int(color[1:3], 16)
+        g = int(color[3:5], 16)
+        b = int(color[5:7], 16)
+        
+        # Apply alpha by darkening the color (mixing with black)
+        r = int(r * (1 - alpha))
+        g = int(g * (1 - alpha))
+        b = int(b * (1 - alpha))
+        
+        # Return color in #RRGGBB format
+        return f'#{r:02x}{g:02x}{b:02x}'
+        
+    def _restore_element_state(self, state):
+        """Restore element state for undo/redo."""
+        for element in self.elements:
+            if state.get('id') == id(element):
+                for key, value in state.items():
+                    if key != 'id':
+                        setattr(element, key, value)
+                break
+
+    def _clone_element(self, element):
+        """Create a copy of a drawing element."""
+        clone = DrawingElement(element.tool_type, element.x1, element.y1,
+                             element.x2, element.y2)
+        # Copy all attributes
+        for attr in vars(element):
+            if attr not in ('x1', 'y1', 'x2', 'y2', 'tool_type'):
+                setattr(clone, attr, getattr(element, attr))
+        return clone
+        
+    def _draw_shadow(self, element):
+        """Draw a shadow effect for the given element."""
+        # Shadow effects disabled
+        pass
+        # Shadow properties
+        shadow_color = '#000000'
+        shadow_alpha = 0.3
+        
+        # Get element coordinates and properties
+        x1, y1 = element.x1 + element.shadow_offset, element.y1 + element.shadow_offset
+        if hasattr(element, 'x2'):
+            x2, y2 = element.x2 + element.shadow_offset, element.y2 + element.shadow_offset
+        else:
+            x2, y1 = x1, y1
+            
+        # Apply shadow based on element type
+        shadow_kwargs = {
+            'fill': self._with_alpha(shadow_color, shadow_alpha)
+        }
+        
+        if element.tool_type == DrawingTool.RECTANGLE:
+            self.create_rectangle(x1, y1, x2, y2, **shadow_kwargs)
+        elif element.tool_type == DrawingTool.ELLIPSE:
+            self.create_oval(x1, y1, x2, y2, **shadow_kwargs)
+        elif element.tool_type in (DrawingTool.LINE, DrawingTool.ARROW):
+            shadow_kwargs['width'] = element.width
+            self.create_line(x1, y1, x2, y2, **shadow_kwargs)
+        elif element.tool_type == DrawingTool.TEXT:
+            self.create_text(x1, y1, text=element.text, fill=self._with_alpha(shadow_color, shadow_alpha),
+                           font=element.font, anchor='nw')
+
+class TextInputDialog(tk.Toplevel):
+    """Dialog for entering text."""
+    
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.title("Enter Text")
+        self.text = None
+        self._create_dialog()
+        
+    def _create_dialog(self):
+        """Create dialog UI."""
+        self.text_var = tk.StringVar()
+        entry = ttk.Entry(self, textvariable=self.text_var)
+        entry.pack(padx=10, pady=5)
+        entry.focus_set()
+        
+        btn_frame = ttk.Frame(self)
+        btn_frame.pack(pady=5)
+        
+        ttk.Button(btn_frame, text="OK", command=self._handle_ok).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Cancel", command=self.destroy).pack(side=tk.LEFT)
+        
+    def _handle_ok(self):
+        """Handle OK button click."""
+        self.text = self.text_var.get()
+        self.destroy()
