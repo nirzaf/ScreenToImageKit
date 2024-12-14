@@ -14,6 +14,7 @@ ScreenToImageKit is a Python application that allows users to capture screenshot
 - **Secure Storage**: Encrypted storage of ImageKit credentials
 - **System Tray Integration**: Quick access to app features
 - **Clipboard Integration**: Automatically copies uploaded image URLs to clipboard
+- **Resource Management**: Automatic cleanup of temporary files during startup and shutdown
 
 ## Installation
 
@@ -77,17 +78,61 @@ Then either:
    - Click "Upload" to proceed or "Cancel" to discard
    - The URL will be copied to your clipboard after upload
 
-## Future Improvements
+## Upcoming Features
 
-- **Enhanced UI**: Improve the user interface for a better user experience
-- **Annotation Tools**: Add tools to annotate screenshots before uploading
-- **Multiple Image Uploads**: Allow uploading multiple images at once
-- **Additional Services**: Integration with other image hosting services
-- **Hotkey Support**: Global hotkeys for quick capture
+### User Interface Enhancements
+- [ ] Dark mode support with theme switching
+- [ ] Customizable keyboard shortcuts for quick capture
+- [ ] Multi-monitor support with monitor selection
+- [ ] Magnifier tool for precise area selection
+- [ ] Customizable capture delay timer
+
+### Image Editing & Annotation
+- [ ] Advanced annotation tools (arrows, shapes, text)
+- [ ] Basic image adjustments (brightness, contrast, crop)
+- [ ] Blur/pixelate sensitive information
+- [ ] Custom watermark support
+- [ ] Undo/redo functionality for edits
+
+### Upload & Sharing
+- [ ] Multiple image upload support
+- [ ] Batch processing capabilities
+- [ ] Additional upload services integration
+- [ ] Custom upload naming patterns
+- [ ] Share directly to social media platforms
+
+### Organization & Management
+- [ ] Screenshot history with search functionality
+- [ ] Local gallery with categorization
+- [ ] Cloud backup integration
+- [ ] Export/import settings
+- [ ] Screenshot tagging system
+
+### Performance & Technical
+- [ ] Optimized memory usage for large screenshots
+- [ ] Compressed upload options
+- [ ] Background processing for heavy operations
+- [ ] Auto-update functionality
+- [ ] Offline mode support
+
+### Productivity Features
+- [ ] OCR text extraction from screenshots
+- [ ] Quick actions based on screenshot content
+- [ ] Template-based captures
+- [ ] Scheduled captures
+- [ ] Integration with productivity tools
+
+### Security & Privacy
+- [ ] End-to-end encryption for uploads
+- [ ] Privacy mask for sensitive data
+- [ ] Secure credential management
+- [ ] Audit logging
+- [ ] GDPR compliance tools
 
 ## Contributing
 
 We welcome contributions from the open source community! If you have ideas, suggestions, or bug reports:
+
 1. Open an issue to discuss proposed changes
 2. Submit a pull request with your improvements
 

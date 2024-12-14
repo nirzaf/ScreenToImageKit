@@ -1,6 +1,5 @@
 """Image handling utilities for ScreenToImageKit."""
 
-import os
 import logging
 from datetime import datetime
 from PIL import ImageGrab, Image
@@ -9,11 +8,25 @@ import time
 logger = logging.getLogger(__name__)
 
 class ImageHandler:
-    """Handles image capture and manipulation operations."""
-
-    @staticmethod
-    def capture_fullscreen(window_to_hide=None):
-        """Capture full screen screenshot."""
+    """Handles image capture and processing operations."""
+    
+    def __init__(self, temp_file_service):
+        """Initialize ImageHandler with dependencies.
+        
+        Args:
+            temp_file_service: Service for managing temporary files
+        """
+        self.temp_file_service = temp_file_service
+    
+    def capture_fullscreen(self, window_to_hide=None):
+        """Capture full screen screenshot.
+        
+        Args:
+            window_to_hide: Optional window to hide during capture
+            
+        Returns:
+            tuple: (temp_path, screenshot) Temporary file path and PIL Image
+        """
         try:
             # Hide window if provided
             if window_to_hide:
@@ -24,8 +37,8 @@ class ImageHandler:
             logger.debug("Capturing full screen")
             screenshot = ImageGrab.grab()
             
-            # Generate temporary file path
-            temp_path = f"screenshot_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+            # Generate and save to temporary file
+            temp_path = self.temp_file_service.generate_temp_path()
             screenshot.save(temp_path)
             logger.info(f"Screenshot saved temporarily as {temp_path}")
             
@@ -39,10 +52,16 @@ class ImageHandler:
             if window_to_hide:
                 window_to_hide.deiconify()
             raise
-
-    @staticmethod
-    def capture_area(coords):
-        """Capture screenshot of specified area."""
+    
+    def capture_area(self, coords):
+        """Capture screenshot of specified area.
+        
+        Args:
+            coords: Tuple of coordinates (x1, y1, x2, y2)
+            
+        Returns:
+            tuple: (temp_path, screenshot) Temporary file path and PIL Image
+        """
         try:
             x1, y1, x2, y2 = map(int, coords)
             # Ensure coordinates are in correct order
@@ -52,8 +71,8 @@ class ImageHandler:
             logger.debug(f"Capturing area with coordinates: ({x1}, {y1}, {x2}, {y2})")
             screenshot = ImageGrab.grab(bbox=(x1, y1, x2, y2))
             
-            # Generate temporary file path
-            temp_path = f"screenshot_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+            # Generate and save to temporary file
+            temp_path = self.temp_file_service.generate_temp_path()
             screenshot.save(temp_path)
             logger.info(f"Screenshot saved temporarily as {temp_path}")
             
@@ -61,10 +80,17 @@ class ImageHandler:
         except Exception as e:
             logger.error(f"Error capturing area: {e}")
             raise
-
+    
     @staticmethod
     def resize_preview(image):
-        """Resize image for preview."""
+        """Resize image for preview.
+        
+        Args:
+            image: PIL Image to resize
+            
+        Returns:
+            PIL.Image: Resized image
+        """
         try:
             return image.resize(
                 (int(image.width / 2), int(image.height / 2)), 
@@ -73,16 +99,22 @@ class ImageHandler:
         except Exception as e:
             logger.error(f"Error resizing image: {e}")
             raise
-
-    @staticmethod
-    def cleanup_temp_file(file_path):
-        """Remove temporary screenshot file."""
-        if file_path and os.path.exists(file_path):
-            try:
-                os.remove(file_path)
-                logger.debug(f"Temporary file {file_path} removed")
-                return True
-            except Exception as e:
-                logger.error(f"Error removing temporary file: {e}")
-                return False
-        return True  # Return True if file doesn't exist
+    
+    def cleanup_temp_file(self, file_path):
+        """Remove temporary screenshot file.
+        
+        Args:
+            file_path: Path to the file to remove
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        return self.temp_file_service.cleanup_file(file_path)
+    
+    def cleanup_all_temp_files(self):
+        """Clean up all temporary screenshot files.
+        
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        return self.temp_file_service.cleanup_temp_files()
