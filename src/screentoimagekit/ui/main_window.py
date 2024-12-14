@@ -3,7 +3,12 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 import logging
+import pyperclip
 from PIL import ImageTk
+import win32con
+import win32gui
+import win32api
+import time
 from src.screentoimagekit.ui.config_dialog import ConfigDialog
 from src.screentoimagekit.ui.preview_window import PreviewWindow
 from src.screentoimagekit.ui.selection_window import SelectionWindow
@@ -22,6 +27,7 @@ class MainWindow:
         # UI elements
         self.info_label = None
         self.status_label = None
+        self.success_label = None
         self.screenshot_button = None
         self.fullscreen_button = None
         self.config_button = None
@@ -32,11 +38,81 @@ class MainWindow:
         self.icon_capture = None
         self.icon_config = None
         
+        # Hotkey state
+        self.last_capture_time = 0
+        self.is_capturing = False
+        
         # Initialize
         self._setup_window()
         self._load_resources()
         self._create_ui()
         self._load_credentials()
+        self._setup_shortcuts()
+        
+        # Setup message checking
+        self.root.bind('<Map>', lambda e: self._setup_message_check())
+
+    def _setup_message_check(self):
+        """Setup Windows message checking."""
+        def check_messages():
+            try:
+                current_time = time.time()
+                # Check if enough time has passed since last capture (1 second cooldown)
+                if current_time - self.last_capture_time >= 1.0 and not self.is_capturing:
+                    # Check if Ctrl+W is pressed
+                    if win32api.GetAsyncKeyState(win32con.VK_CONTROL) & 0x8000 and \
+                       win32api.GetAsyncKeyState(ord('W')) & 0x8000:
+                        self.last_capture_time = current_time
+                        self._quick_capture()
+            except Exception as e:
+                logger.error(f"Error checking messages: {e}")
+            finally:
+                # Schedule next check (reduced frequency)
+                self.root.after(200, check_messages)
+        
+        # Start checking messages
+        self.root.after(200, check_messages)
+
+    def _quick_capture(self):
+        """Handle quick capture with Ctrl + W."""
+        if self.is_capturing:
+            return
+            
+        logger.info("Quick capture triggered with Ctrl + W")
+        self.is_capturing = True
+        
+        try:
+            # Create selection window with callback
+            self.area = None
+            def on_selection(coords):
+                self.area = coords
+            
+            selection = SelectionWindow(self.root, on_selection)
+            self.root.wait_window(selection.window)  # Wait for selection window to close
+            
+            if self.area:
+                # Capture the selected area
+                screenshot_result = self.image_handler.capture_area(self.area)
+                temp_path, _ = screenshot_result  # Unpack the tuple, we only need the path
+                
+                if temp_path:
+                    # Upload to ImageKit
+                    try:
+                        url = self.imagekit_service.upload_file(temp_path)
+                        if url:
+                            # Show success message at bottom
+                            self._show_success("Screenshot uploaded and URL copied to clipboard!")
+                        else:
+                            self._show_success("Failed to upload screenshot to ImageKit")
+                    except ValueError as ve:
+                        self._show_status("ImageKit is not configured. Please configure it first.", True)
+                    except Exception as e:
+                        self._show_status(f"Failed to upload screenshot: {str(e)}", True)
+        except Exception as e:
+            logger.error(f"Error during quick capture: {e}")
+            self._show_status(f"Failed to capture screenshot: {str(e)}", True)
+        finally:
+            self.is_capturing = False
 
     def _setup_window(self):
         """Setup main window properties."""
@@ -59,7 +135,7 @@ class MainWindow:
             self.icon_config = tk.PhotoImage(file="icons/config.png")
         except Exception as e:
             logger.error(f"Error loading resources: {e}")
-            messagebox.showerror("Error", "Failed to load application resources")
+            self._show_status(f"Error loading resources: {str(e)}", True)
 
     def _create_ui(self):
         """Create main UI elements."""
@@ -72,11 +148,13 @@ class MainWindow:
         # Style configuration
         style = ttk.Style()
         style.configure("TButton", padding=6, font=("Arial", 10))
+        style.configure("Success.TLabel", foreground="green", font=("Arial", 10))
+        style.configure("Error.TLabel", foreground="red", font=("Arial", 10))
 
         # Info label
         self.info_label = ttk.Label(
             main_frame,
-            text="Click the button below to start area selection",
+            text="Press Ctrl + W to capture screenshot",
             font=("Arial", 10)
         )
         self.info_label.pack(pady=10)
@@ -114,14 +192,6 @@ class MainWindow:
         )
         direct_upload_checkbox.pack(pady=5)
 
-        # Status label
-        self.status_label = ttk.Label(
-            main_frame,
-            text="",
-            font=("Arial", 9)
-        )
-        self.status_label.pack(pady=10)
-
         # Config frame
         config_frame = ttk.Frame(main_frame)
         config_frame.pack(pady=10, fill="x")
@@ -144,6 +214,23 @@ class MainWindow:
         )
         self.import_env_button.pack(side=tk.LEFT, expand=True, fill="x")
 
+        # Status label for configuration messages
+        self.status_label = ttk.Label(
+            main_frame,
+            text="",
+            font=("Arial", 9)
+        )
+        self.status_label.pack(pady=10)
+
+        # Success label at the bottom for screenshot messages
+        self.success_label = ttk.Label(
+            self.root,
+            text="",
+            style="Success.TLabel",
+            padding=(0, 5)
+        )
+        self.success_label.pack(side=tk.BOTTOM, fill="x", padx=10, pady=5)
+
         logger.debug("Main UI created successfully")
 
     def _load_credentials(self):
@@ -152,34 +239,46 @@ class MainWindow:
             private_key, public_key, url_endpoint = self.config_manager.load_credentials()
             if all([private_key, public_key, url_endpoint]):
                 if self.imagekit_service.initialize(private_key, public_key, url_endpoint):
-                    self.status_label.config(
+                    self.status_label.configure(
                         text="ImageKit credentials loaded successfully!",
-                        foreground="green"
+                        style="Success.TLabel"
                     )
                 else:
-                    self.status_label.config(
+                    self.status_label.configure(
                         text="Error initializing ImageKit service.",
-                        foreground="red"
+                        style="Error.TLabel"
                     )
             else:
-                self.status_label.config(
+                self.status_label.configure(
                     text="ImageKit credentials not found. Please configure.",
-                    foreground="red"
+                    style="Error.TLabel"
                 )
         except Exception as e:
             logger.error(f"Error loading credentials: {e}")
-            self.status_label.config(
-                text=f"Error loading credentials: {e}",
-                foreground="red"
-            )
+            self._show_status(f"Error loading credentials: {str(e)}", True)
+
+    def _setup_shortcuts(self):
+        """Setup keyboard shortcuts."""
+        # Using Windows API for global hotkeys
+        pass
+
+    def _show_success(self, message):
+        """Show success message in bottom label."""
+        self.success_label.configure(style="Success.TLabel", text=message)
+        # Clear the message after 3 seconds
+        self.root.after(3000, lambda: self.success_label.configure(text=""))
+
+    def _show_status(self, message, is_error=False):
+        """Show status message in main status label."""
+        self.status_label.config(
+            text=message,
+            foreground="red" if is_error else "green"
+        )
 
     def _handle_capture(self):
         """Handle screenshot capture button click."""
         if not self.imagekit_service.is_configured:
-            self.status_label.config(
-                text="Please configure ImageKit credentials.",
-                foreground="red"
-            )
+            self._show_status("Please configure ImageKit credentials.", True)
             return
 
         try:
@@ -187,16 +286,13 @@ class MainWindow:
             SelectionWindow(self.root, self._handle_area_selected)
         except Exception as e:
             logger.error(f"Error in capture: {e}")
-            messagebox.showerror("Error", f"Failed to start capture: {str(e)}")
+            self._show_status(f"Failed to start capture: {str(e)}", True)
             self.root.deiconify()
 
     def _handle_fullscreen_capture(self):
         """Handle full screen capture button click."""
         if not self.imagekit_service.is_configured:
-            self.status_label.config(
-                text="Please configure ImageKit credentials.",
-                foreground="red"
-            )
+            self._show_status("Please configure ImageKit credentials.", True)
             return
 
         try:
@@ -217,7 +313,7 @@ class MainWindow:
                 preview.show()
         except Exception as e:
             logger.error(f"Error in full screen capture: {e}")
-            messagebox.showerror("Error", f"Failed to capture full screen: {str(e)}")
+            self._show_status(f"Failed to capture full screen: {str(e)}", True)
 
     def _handle_area_selected(self, coords):
         """Handle area selection completion."""
@@ -240,22 +336,16 @@ class MainWindow:
                 preview.show()
         except Exception as e:
             logger.error(f"Error handling selected area: {e}")
-            messagebox.showerror("Error", f"Failed to process selection: {str(e)}")
+            self._show_status(f"Failed to process selection: {str(e)}", True)
 
     def _handle_upload(self, temp_path):
         """Handle screenshot upload."""
         try:
             url = self.imagekit_service.upload_file(temp_path)
-            self.status_label.config(
-                text=f"Upload successful! URL copied to clipboard: {url}",
-                foreground="green"
-            )
+            self._show_success(f"Upload successful! URL copied to clipboard: {url}")
         except Exception as e:
             logger.error(f"Error uploading: {e}")
-            self.status_label.config(
-                text=f"Error: {str(e)}",
-                foreground="red"
-            )
+            self._show_status(f"Error: {str(e)}", True)
         finally:
             self.image_handler.cleanup_temp_file(temp_path)
 
@@ -280,26 +370,14 @@ class MainWindow:
                         dialog.result['public_key'],
                         dialog.result['url_endpoint']
                     )
-                    self.status_label.config(
-                        text="ImageKit configured successfully!",
-                        foreground="green"
-                    )
+                    self._show_status("ImageKit configured successfully!")
                 else:
-                    self.status_label.config(
-                        text="Error initializing ImageKit service.",
-                        foreground="red"
-                    )
+                    self._show_status("Error initializing ImageKit service.", True)
             except Exception as e:
                 logger.error(f"Error configuring ImageKit: {e}")
-                self.status_label.config(
-                    text=f"Error configuring ImageKit: {str(e)}",
-                    foreground="red"
-                )
+                self._show_status(f"Error configuring ImageKit: {str(e)}", True)
         else:
-            self.status_label.config(
-                text="ImageKit configuration cancelled.",
-                foreground="red"
-            )
+            self._show_status("ImageKit configuration cancelled.", True)
 
     def _handle_import_env(self):
         """Handle importing configuration from .env file."""
@@ -309,26 +387,14 @@ class MainWindow:
                 if self.imagekit_service.initialize(private_key, public_key, url_endpoint):
                     # Save to encrypted storage for future use
                     self.config_manager.save_credentials(private_key, public_key, url_endpoint)
-                    self.status_label.config(
-                        text="Configuration imported from .env successfully!",
-                        foreground="green"
-                    )
+                    self._show_status("Configuration imported from .env successfully!")
                 else:
-                    self.status_label.config(
-                        text="Error initializing ImageKit with .env credentials.",
-                        foreground="red"
-                    )
+                    self._show_status("Error initializing ImageKit with .env credentials.", True)
             else:
-                self.status_label.config(
-                    text="No valid credentials found in .env file.",
-                    foreground="red"
-                )
+                self._show_status("No valid credentials found in .env file.", True)
         except Exception as e:
             logger.error(f"Error importing .env configuration: {e}")
-            self.status_label.config(
-                text=f"Error importing .env configuration: {str(e)}",
-                foreground="red"
-            )
+            self._show_status(f"Error importing .env configuration: {str(e)}", True)
 
     def run(self):
         """Start the application main loop."""

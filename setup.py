@@ -13,7 +13,8 @@ setup(
         "imagekitio",
         "cryptography",
         "pystray",
-        "python-dotenv"
+        "python-dotenv",
+        "keyboard"  # Added for global hotkeys
     ],
     entry_points={
         "console_scripts": [
