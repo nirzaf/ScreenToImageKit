@@ -12,6 +12,7 @@ import time
 from src.screentoimagekit.ui.config_dialog import ConfigDialog
 from src.screentoimagekit.ui.preview_window import PreviewWindow
 from src.screentoimagekit.ui.selection_window import SelectionWindow
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -185,7 +186,7 @@ class MainWindow:
         self.fullscreen_button.pack(side=tk.LEFT, expand=True, fill="x")
 
         # Direct upload checkbox
-        self.direct_upload_var = tk.BooleanVar()
+        self.direct_upload_var = tk.BooleanVar(value=True)  # Set to True by default
         direct_upload_checkbox = ttk.Checkbutton(
             main_frame,
             text="Upload directly to ImageKit",
@@ -338,18 +339,31 @@ class MainWindow:
         """Handle area selection completion."""
         self.root.deiconify()
         try:
-            # Step 1: Capture screen
+            logger.debug(f"Selected coordinates: {coords}")
             temp_path, screenshot = self.image_handler.capture_area(coords)
+            logger.info(f"Screenshot captured: {temp_path}")
             
             if self.direct_upload_var.get():
                 # Process synchronously: analyze, rename, upload, cleanup
-                self.image_handler.process_and_upload_image(
-                    temp_path,
-                    use_gemini=self.use_gemini_var.get(),
-                    upload_callback=self._handle_upload
-                )
+                try:
+                    logger.debug("Starting direct upload process")
+                    self.image_handler.process_and_upload_image(
+                        temp_path,
+                        use_gemini=self.use_gemini_var.get(),
+                        upload_callback=lambda path: self._handle_upload(path)
+                    )
+                except Exception as e:
+                    error_msg = f"Error in image processing: {str(e)}"
+                    if hasattr(e, '__traceback__'):
+                        import traceback
+                        error_msg += f"\nStack trace:\n{''.join(traceback.format_tb(e.__traceback__))}"
+                    logger.error(error_msg)
+                    self._show_status(f"Error processing image: {str(e)}", True)
+                    # Ensure cleanup
+                    self.image_handler.cleanup_temp_file(temp_path)
             else:
                 # Show preview window
+                logger.debug("Showing preview window")
                 resized_image = self.image_handler.resize_preview(screenshot)
                 preview = PreviewWindow(
                     self.root,
@@ -357,23 +371,49 @@ class MainWindow:
                     lambda annotated_path=None: self.image_handler.process_and_upload_image(
                         annotated_path or temp_path,
                         use_gemini=self.use_gemini_var.get(),
-                        upload_callback=self._handle_upload
+                        upload_callback=lambda path: self._handle_upload(path)
                     ),
                     lambda: self.image_handler.cleanup_temp_file(temp_path)
                 )
                 preview.show()
         except Exception as e:
-            logger.error(f"Error handling selected area: {e}")
+            error_msg = f"Error handling selected area: {str(e)}"
+            if hasattr(e, '__traceback__'):
+                import traceback
+                error_msg += f"\nStack trace:\n{''.join(traceback.format_tb(e.__traceback__))}"
+            logger.error(error_msg)
             self._show_status(f"Failed to process selection: {str(e)}", True)
 
     def _handle_upload(self, temp_path):
         """Handle screenshot upload."""
         try:
+            logger.debug(f"Starting upload for file: {temp_path}")
+            if not os.path.exists(temp_path):
+                error_msg = f"File not found before upload: {temp_path}"
+                logger.error(error_msg)
+                self._show_status(error_msg, True)
+                return False
+
             url = self.imagekit_service.upload_file(temp_path)
-            self._show_success(f"Upload successful! URL copied to clipboard: {url}")
+            if url:
+                success_msg = f"Upload successful! URL copied to clipboard: {url}"
+                logger.info(success_msg)
+                self._show_success(success_msg)
+                return True
+            
+            error_msg = "Upload failed: No URL returned from ImageKit"
+            logger.error(error_msg)
+            self._show_status(error_msg, True)
+            return False
+            
         except Exception as e:
-            logger.error(f"Error uploading: {e}")
+            error_msg = f"Error uploading: {str(e)}"
+            if hasattr(e, '__traceback__'):
+                import traceback
+                error_msg += f"\nStack trace:\n{''.join(traceback.format_tb(e.__traceback__))}"
+            logger.error(error_msg)
             self._show_status(f"Error: {str(e)}", True)
+            return False
 
     def _handle_cancel(self, temp_path):
         """Handle preview cancellation."""

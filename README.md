@@ -12,6 +12,7 @@ ScreenToImageKit is a Python application that allows users to capture screenshot
   - Configure via UI dialog
   - Import configuration from `.env` file
 - **Secure Storage**: Encrypted storage of ImageKit credentials
+- **Gemini AI Integration**: Analyze images using Gemini AI for better naming
 - **System Tray Integration**: Quick access to app features
 - **Clipboard Integration**: Automatically copies uploaded image URLs to clipboard
 - **Resource Management**: Automatic cleanup of temporary files during startup and shutdown
@@ -29,6 +30,9 @@ ScreenToImageKit is a Python application that allows users to capture screenshot
    pip install -r requirements.txt
    ```
 
+   Additional dependencies:
+   - `google-generativeai`
+
 3. **Run the Application**:
    ```bash
    python main.py
@@ -44,6 +48,7 @@ You have two ways to configure ImageKit credentials:
   - Private Key
   - Public Key
   - URL Endpoint
+  - Gemini API Key
 - Click "OK" to save
 
 ### 2. Using .env File
@@ -52,6 +57,7 @@ Create a `.env` file in the root directory with the following content:
 PRIVATE_KEY=your_private_key
 PUBLIC_KEY=your_public_key
 URL_ENDPOINT=your_url_endpoint
+GEMINI_API_KEY=your_gemini_api_key
 ```
 Then either:
 - Start the app (it will load credentials automatically)
