@@ -12,11 +12,10 @@ ScreenToImageKit is a Python application that allows users to capture screenshot
   - Configure via UI dialog
   - Import configuration from `.env` file
 - **Secure Storage**: Encrypted storage of ImageKit credentials
+- **Gemini AI Integration**: Analyze images using Gemini AI for better naming
 - **System Tray Integration**: Quick access to app features
 - **Clipboard Integration**: Automatically copies uploaded image URLs to clipboard
 - **Resource Management**: Automatic cleanup of temporary files during startup and shutdown
-- **Gemini AI Integration**: Analyze images using Gemini AI for better naming and categorization
-- **Icon Resizing**: Resize icons for better clarity and usability
 
 ## Installation
 
