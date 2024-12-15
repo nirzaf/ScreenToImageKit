@@ -2,6 +2,7 @@
 
 import logging
 import pyperclip
+import os
 from imagekitio import ImageKit
 from imagekitio.models.UploadFileRequestOptions import UploadFileRequestOptions
 
@@ -43,9 +44,11 @@ class ImageKitService:
             )
 
             with open(file_path, 'rb') as file:
+                # Use the basename of the file as the ImageKit filename
+                file_name = os.path.basename(file_path)
                 upload = self.imagekit.upload_file(
                     file=file,
-                    file_name=file_path,
+                    file_name=file_name,
                     options=options
                 )
 

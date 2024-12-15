@@ -10,6 +10,8 @@ import asyncio
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
+from ..services.temp_file_service import TempFileService
+
 logger = logging.getLogger(__name__)
 
 class ImageHandler:
@@ -26,14 +28,23 @@ class ImageHandler:
         self.executor = ThreadPoolExecutor(max_workers=2)
         self._processing_lock = threading.Lock()
     
-    def _process_image_async(self, temp_path, callback=None):
+    def _process_image_async(self, temp_path, callback=None, use_gemini=True):
         """Process image analysis and renaming in background thread."""
         def _background_task():
             try:
-                if not self.image_analysis.is_initialized:
-                    logger.info("Using default naming strategy (Gemini AI not initialized)")
-                    if callback:
-                        callback(temp_path)
+                if not use_gemini or not self.image_analysis.is_initialized:
+                    logger.info("Using default naming strategy (Gemini AI disabled or not initialized)")
+                    # Add timestamp to default name
+                    timestamp = int(time.time() * 1000)
+                    directory = os.path.dirname(temp_path)
+                    filename = f"screenshot_{timestamp}.png"
+                    new_path = os.path.join(directory, filename)
+                    
+                    with self._processing_lock:
+                        if os.path.exists(temp_path):
+                            os.rename(temp_path, new_path)
+                            if callback:
+                                callback(new_path)
                     return
                 
                 logger.info("Starting Gemini AI analysis in background...")
@@ -43,15 +54,16 @@ class ImageHandler:
                 asyncio.set_event_loop(loop)
                 
                 try:
-                    # Run analysis
+                    # Run analysis with use_gemini flag
                     description = loop.run_until_complete(
-                        self.image_analysis.analyze_image_async(temp_path)
+                        self.image_analysis.analyze_image_async(temp_path, use_gemini)
                     )
                     
                     if description:
-                        # Create new path with description
+                        # Add timestamp to prevent duplicates
+                        timestamp = int(time.time() * 1000)
                         directory = os.path.dirname(temp_path)
-                        filename = f"{description}.png"
+                        filename = f"{description}_{timestamp}.png"
                         new_path = os.path.join(directory, filename)
                         
                         # Rename the file
@@ -63,17 +75,40 @@ class ImageHandler:
                                     callback(new_path)
                                 return
                     
-                    logger.info("Using default naming strategy (Gemini AI analysis failed or timed out)")
-                    if callback:
-                        callback(temp_path)
+                    # If no description, use default naming with timestamp
+                    timestamp = int(time.time() * 1000)
+                    directory = os.path.dirname(temp_path)
+                    filename = f"screenshot_{timestamp}.png"
+                    new_path = os.path.join(directory, filename)
+                    
+                    with self._processing_lock:
+                        if os.path.exists(temp_path):
+                            os.rename(temp_path, new_path)
+                            logger.info("Using default naming strategy with timestamp")
+                            if callback:
+                                callback(new_path)
                         
                 finally:
                     loop.close()
                     
             except Exception as e:
                 logger.error(f"Error in background processing: {e}")
-                if callback:
-                    callback(temp_path)
+                # In case of error, use default naming with timestamp
+                try:
+                    timestamp = int(time.time() * 1000)
+                    directory = os.path.dirname(temp_path)
+                    filename = f"screenshot_{timestamp}.png"
+                    new_path = os.path.join(directory, filename)
+                    
+                    with self._processing_lock:
+                        if os.path.exists(temp_path):
+                            os.rename(temp_path, new_path)
+                            if callback:
+                                callback(new_path)
+                except Exception as rename_error:
+                    logger.error(f"Error in fallback rename: {rename_error}")
+                    if callback:
+                        callback(temp_path)
         
         # Submit background task
         self.executor.submit(_background_task)
@@ -176,6 +211,74 @@ class ImageHandler:
             )
         except Exception as e:
             logger.error(f"Error resizing image: {e}")
+            raise
+    
+    def process_and_upload_image(self, temp_path, use_gemini=True, upload_callback=None):
+        """Process image synchronously in the following order:
+        1. Analyze with Gemini AI (if enabled)
+        2. Rename based on description or timestamp
+        3. Upload to ImageKit
+        4. Clean up temp file
+        """
+        try:
+            final_path = temp_path  # Track the final path
+            
+            # Step 1 & 2: Get description from Gemini and rename
+            if use_gemini and self.image_analysis.is_initialized:
+                logger.info("Starting Gemini AI analysis...")
+                
+                # Create event loop for this thread
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                
+                try:
+                    # Run analysis synchronously with timeout
+                    description = loop.run_until_complete(
+                        self.image_analysis.analyze_image_async(temp_path, use_gemini)
+                    )
+                    
+                    if description:
+                        # Rename with description
+                        timestamp = int(time.time() * 1000)
+                        directory = os.path.dirname(temp_path)
+                        filename = f"{description}_{timestamp}.png"
+                        new_path = os.path.join(directory, filename)
+                        
+                        with self._processing_lock:
+                            if os.path.exists(temp_path):
+                                os.rename(temp_path, new_path)
+                                logger.info(f"File renamed with AI description: {new_path}")
+                                final_path = new_path  # Update final path
+                finally:
+                    loop.close()
+            
+            # If no description received or Gemini disabled, use default naming
+            if final_path == temp_path:  # Only rename if not already renamed
+                timestamp = int(time.time() * 1000)
+                directory = os.path.dirname(temp_path)
+                filename = f"screenshot_{timestamp}.png"
+                new_path = os.path.join(directory, filename)
+                
+                with self._processing_lock:
+                    if os.path.exists(temp_path):
+                        os.rename(temp_path, new_path)
+                        logger.info(f"File renamed with default name: {new_path}")
+                        final_path = new_path  # Update final path
+
+            # Step 3: Upload to ImageKit
+            if upload_callback and os.path.exists(final_path):
+                upload_callback(final_path)
+            
+            # Step 4: Cleanup temp file
+            self.cleanup_temp_file(final_path)
+            
+        except Exception as e:
+            logger.error(f"Error in process_and_upload_image: {e}")
+            # Ensure temp file is cleaned up even on error
+            if 'final_path' in locals():
+                self.cleanup_temp_file(final_path)
+            else:
+                self.cleanup_temp_file(temp_path)
             raise
     
     def cleanup_temp_file(self, file_path):
