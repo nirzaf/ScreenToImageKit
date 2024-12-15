@@ -220,6 +220,7 @@ class ImageHandler:
         3. Upload to ImageKit
         4. Clean up temp file
         """
+        final_path = None
         try:
             final_path = temp_path  # Track the final path
             
@@ -265,20 +266,49 @@ class ImageHandler:
                         logger.info(f"File renamed with default name: {new_path}")
                         final_path = new_path  # Update final path
 
-            # Step 3: Upload to ImageKit
-            if upload_callback and os.path.exists(final_path):
-                upload_callback(final_path)
+            # Step 3: Upload to ImageKit with retries
+            upload_success = False
+            if upload_callback and final_path and os.path.exists(final_path):
+                max_retries = 3
+                retry_delay = 1  # seconds
+                
+                for attempt in range(max_retries):
+                    try:
+                        logger.info(f"Attempting upload (attempt {attempt + 1}/{max_retries})")
+                        if upload_callback(final_path):  # Check the return value
+                            upload_success = True
+                            logger.info("Upload to ImageKit successful")
+                            break
+                        else:
+                            logger.warning(f"Upload attempt {attempt + 1} failed")
+                            if attempt < max_retries - 1:
+                                time.sleep(retry_delay)
+                    except Exception as upload_error:
+                        logger.error(f"Upload attempt {attempt + 1} failed with error: {upload_error}")
+                        if attempt < max_retries - 1:
+                            time.sleep(retry_delay)
+                        continue
             
-            # Step 4: Cleanup temp file
-            self.cleanup_temp_file(final_path)
+            # Step 4: Always cleanup temp file after upload attempts
+            if final_path and os.path.exists(final_path):
+                try:
+                    self.cleanup_temp_file(final_path)
+                    logger.info(f"Cleaned up temp file: {final_path}")
+                except Exception as cleanup_error:
+                    logger.error(f"Error cleaning up temp file: {cleanup_error}")
+            
+            if not upload_success:
+                raise Exception("Upload to ImageKit failed after all attempts")
             
         except Exception as e:
             logger.error(f"Error in process_and_upload_image: {e}")
-            # Ensure temp file is cleaned up even on error
-            if 'final_path' in locals():
-                self.cleanup_temp_file(final_path)
-            else:
-                self.cleanup_temp_file(temp_path)
+            # Ensure temp files are cleaned up even on error
+            if final_path and os.path.exists(final_path):
+                try:
+                    self.cleanup_temp_file(final_path)
+                    logger.info(f"Cleaned up temp file after error: {final_path}")
+                except Exception as cleanup_error:
+                    logger.error(f"Error cleaning up temp file after error: {cleanup_error}")
             raise
     
     def cleanup_temp_file(self, file_path):

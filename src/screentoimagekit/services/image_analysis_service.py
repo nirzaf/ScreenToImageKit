@@ -9,6 +9,8 @@ import threading
 import base64
 from typing import Optional, Dict, Any
 import time
+import re
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +74,62 @@ class ImageAnalysisService:
             logger.error(f"API Error Status Code: {error.status_code}")
         if hasattr(error, 'response'):
             logger.error(f"API Error Response: {error.response}")
+
+    def _format_description(self, description):
+        """Format the description for use in filename.
+        
+        Args:
+            description: Raw description from Gemini AI
+            
+        Returns:
+            Formatted description that fits naming requirements:
+            - Between 30-40 characters
+            - Format: description_HHMM
+            - Only valid filename characters
+        """
+        try:
+            # Clean the description: lowercase and replace invalid chars
+            clean_desc = re.sub(r'[^a-zA-Z0-9_]', '_', description.lower())
+            
+            # Remove consecutive underscores
+            clean_desc = re.sub(r'_+', '_', clean_desc)
+            
+            # Get current time in HHMM format
+            current_time = datetime.now().strftime("%H%M")
+            
+            # Target length for description (excluding _HHMM suffix)
+            # We need room for _HHMM (5 chars) in the final 30-40 char range
+            target_min = 25  # 30 - 5
+            target_max = 35  # 40 - 5
+            
+            # Adjust description length
+            if len(clean_desc) < target_min:
+                # Pad with meaningful words if too short
+                padding_words = ["screenshot", "image", "capture"]
+                while len(clean_desc) < target_min and padding_words:
+                    clean_desc = f"{clean_desc}_{padding_words.pop(0)}"
+            elif len(clean_desc) > target_max:
+                # Truncate if too long, but keep whole words
+                clean_desc = clean_desc[:target_max]
+                last_underscore = clean_desc.rfind('_')
+                if last_underscore > target_min:
+                    clean_desc = clean_desc[:last_underscore]
+            
+            # Final filename: description_HHMM
+            final_name = f"{clean_desc}_{current_time}"
+            
+            # Validate final length
+            if not (30 <= len(final_name) <= 40):
+                logger.warning(f"Generated filename length ({len(final_name)}) outside target range: {final_name}")
+                
+            logger.debug(f"Formatted description: {final_name} (length: {len(final_name)})")
+            return final_name
+            
+        except Exception as e:
+            logger.error(f"Error formatting description: {e}")
+            # Return a safe default name that meets length requirements
+            timestamp = datetime.now().strftime("%H%M")
+            return f"screenshot_capture_image_{timestamp}"
 
     def _process_description(self, raw_description: str, max_words: int) -> str:
         """Process and clean the raw description from Gemini.
@@ -195,17 +253,10 @@ class ImageAnalysisService:
             response = await self._analyze_with_timeout(image_data, prompt)
             
             if response and response.text:
-                # Clean and format the response
-                description = response.text.strip().lower()
-                # Remove any special characters and replace spaces with underscores
-                description = ''.join(c if c.isalnum() or c == '_' else '_' for c in description)
-                # Remove multiple consecutive underscores
-                description = '_'.join(filter(None, description.split('_')))
-                # Ensure it's not too long
-                description = description[:50]
-                
-                logger.info(f"Gemini generated description: {description}")
-                return description
+                # Format the description
+                formatted_desc = self._format_description(response.text.strip())
+                logger.info(f"Gemini generated description: {formatted_desc}")
+                return formatted_desc
             
             logger.warning("No valid response from Gemini")
             return None

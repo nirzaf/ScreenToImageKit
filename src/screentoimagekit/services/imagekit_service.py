@@ -3,6 +3,7 @@
 import logging
 import pyperclip
 import os
+import time
 from imagekitio import ImageKit
 from imagekitio.models.UploadFileRequestOptions import UploadFileRequestOptions
 
@@ -31,38 +32,83 @@ class ImageKitService:
             self.imagekit = None
             return False
 
-    def upload_file(self, file_path):
-        """Upload file to ImageKit."""
+    def upload_file(self, file_path, max_retries=3, retry_delay=1):
+        """Upload file to ImageKit with retries.
+        
+        Args:
+            file_path: Path to the file to upload
+            max_retries: Maximum number of upload attempts
+            retry_delay: Delay between retries in seconds
+        """
         if not self.imagekit:
-            raise ValueError("ImageKit not initialized")
+            error_msg = "ImageKit not initialized - check your API credentials"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
 
-        try:
-            options = UploadFileRequestOptions(
-                response_fields=["is_private_file", "tags"],
-                tags=["screenshot"],
-                folder="/screenshots"
-            )
+        if not os.path.exists(file_path):
+            error_msg = f"File not found: {file_path}"
+            logger.error(error_msg)
+            raise FileNotFoundError(error_msg)
 
-            with open(file_path, 'rb') as file:
-                # Use the basename of the file as the ImageKit filename
-                file_name = os.path.basename(file_path)
-                upload = self.imagekit.upload_file(
-                    file=file,
-                    file_name=file_name,
-                    options=options
+        last_error = None
+        for attempt in range(max_retries):
+            try:
+                logger.debug(f"Upload attempt {attempt + 1}/{max_retries} for file: {file_path}")
+                
+                if not os.path.exists(file_path):
+                    raise FileNotFoundError(f"File disappeared during upload attempt: {file_path}")
+
+                options = UploadFileRequestOptions(
+                    response_fields=["is_private_file", "tags"],
+                    tags=["screenshot"],
+                    folder="/screenshots"
                 )
 
-                if upload and hasattr(upload, 'url'):
-                    # Copy URL to clipboard
-                    pyperclip.copy(upload.url)
-                    logger.info(f"File uploaded successfully: {upload.url}")
-                    return upload.url
-                else:
-                    raise Exception("Upload failed: Invalid response from ImageKit")
+                with open(file_path, 'rb') as file:
+                    file_name = os.path.basename(file_path)
+                    logger.debug(f"Uploading file with name: {file_name}")
+                    
+                    try:
+                        upload = self.imagekit.upload_file(
+                            file=file,
+                            file_name=file_name,
+                            options=options
+                        )
+                        
+                        if upload and hasattr(upload, 'url'):
+                            logger.info(f"Upload successful on attempt {attempt + 1}. URL: {upload.url}")
+                            pyperclip.copy(upload.url)
+                            return upload.url
+                        else:
+                            raise Exception(f"Invalid response from ImageKit: {upload}")
+                            
+                    except Exception as e:
+                        logger.error(f"ImageKit API error on attempt {attempt + 1}: {str(e)}")
+                        if hasattr(e, '__traceback__'):
+                            import traceback
+                            logger.error(f"Stack trace:\n{''.join(traceback.format_tb(e.__traceback__))}")
+                        last_error = e
+                        raise
 
-        except Exception as e:
-            logger.error(f"Error uploading to ImageKit: {e}")
-            raise
+            except Exception as e:
+                last_error = e
+                error_msg = f"Upload attempt {attempt + 1} failed: {str(e)}"
+                if hasattr(e, '__traceback__'):
+                    import traceback
+                    error_msg += f"\nStack trace:\n{''.join(traceback.format_tb(e.__traceback__))}"
+                logger.error(error_msg)
+                
+                if attempt < max_retries - 1:
+                    logger.info(f"Retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                continue
+
+        # If we get here, all retries failed
+        final_error = f"All {max_retries} upload attempts failed."
+        if last_error:
+            final_error += f" Last error: {str(last_error)}"
+        logger.error(final_error)
+        raise Exception(final_error)
 
     @property
     def is_configured(self):

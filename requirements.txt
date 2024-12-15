@@ -6,3 +6,4 @@ pystray
 python-dotenv
 google-generativeai
 pywin32
+olefile
