@@ -4,6 +4,8 @@ import os
 import glob
 import logging
 from pathlib import Path
+import time
+import uuid
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +21,7 @@ class TempFileService:
         """
         self.temp_dir = temp_dir or os.getcwd()
         
-    def cleanup_temp_files(self, pattern="screenshot_*.png"):
+    def cleanup_temp_files(self, pattern="s_*.png"):
         """Clean up temporary files matching the given pattern.
         
         Args:
@@ -66,17 +68,20 @@ class TempFileService:
             logger.error(f"Error removing temporary file: {e}")
             return False
             
-    def generate_temp_path(self, prefix="screenshot", suffix=".png"):
+    def generate_temp_path(self, prefix="s", suffix=".png"):
         """Generate a path for a temporary file.
         
         Args:
-            prefix (str): Prefix for the filename
+            prefix (str): Prefix for the filename (default: 's' for screenshot)
             suffix (str): Suffix/extension for the filename
             
         Returns:
             str: Generated temporary file path
         """
-        from datetime import datetime
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f"{prefix}_{timestamp}{suffix}"
+        # Get current time in milliseconds (last 4 digits)
+        timestamp = str(int(time.time() * 1000))[-4:]
+        # Get first 4 chars of a UUID for uniqueness
+        unique_id = str(uuid.uuid4())[:4]
+        # Combine for a short, unique filename
+        filename = f"{prefix}{timestamp}{unique_id}{suffix}"
         return str(Path(self.temp_dir) / filename)
