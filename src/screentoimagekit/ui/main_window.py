@@ -33,6 +33,7 @@ class MainWindow:
         self.config_button = None
         self.import_env_button = None
         self.direct_upload_var = None
+        self.use_gemini_var = None
         
         # Resources
         self.icon_capture = None
@@ -192,6 +193,15 @@ class MainWindow:
         )
         direct_upload_checkbox.pack(pady=5)
 
+        # Gemini AI toggle checkbox
+        self.use_gemini_var = tk.BooleanVar(value=True)  # Default to True
+        gemini_checkbox = ttk.Checkbutton(
+            main_frame,
+            text="Use Gemini AI for image naming",
+            variable=self.use_gemini_var
+        )
+        gemini_checkbox.pack(pady=5)
+
         # Config frame
         config_frame = ttk.Frame(main_frame)
         config_frame.pack(pady=10, fill="x")
@@ -296,19 +306,28 @@ class MainWindow:
             return
 
         try:
+            # Step 1: Capture screen
             temp_path, screenshot = self.image_handler.capture_fullscreen(window_to_hide=self.root)
-            resized_image = self.image_handler.resize_preview(screenshot)
             
             if self.direct_upload_var.get():
-                # Direct upload without preview
-                self._handle_upload(temp_path)
+                # Process synchronously: analyze, rename, upload, cleanup
+                self.image_handler.process_and_upload_image(
+                    temp_path,
+                    use_gemini=self.use_gemini_var.get(),
+                    upload_callback=self._handle_upload
+                )
             else:
                 # Show preview window
+                resized_image = self.image_handler.resize_preview(screenshot)
                 preview = PreviewWindow(
                     self.root,
                     resized_image,
-                    lambda annotated_path=None: self._handle_upload(annotated_path or temp_path),
-                    lambda: self._handle_cancel(temp_path)
+                    lambda annotated_path=None: self.image_handler.process_and_upload_image(
+                        annotated_path or temp_path,
+                        use_gemini=self.use_gemini_var.get(),
+                        upload_callback=self._handle_upload
+                    ),
+                    lambda: self.image_handler.cleanup_temp_file(temp_path)
                 )
                 preview.show()
         except Exception as e:
@@ -319,19 +338,28 @@ class MainWindow:
         """Handle area selection completion."""
         self.root.deiconify()
         try:
+            # Step 1: Capture screen
             temp_path, screenshot = self.image_handler.capture_area(coords)
-            resized_image = self.image_handler.resize_preview(screenshot)
             
             if self.direct_upload_var.get():
-                # Direct upload without preview
-                self._handle_upload(temp_path)
+                # Process synchronously: analyze, rename, upload, cleanup
+                self.image_handler.process_and_upload_image(
+                    temp_path,
+                    use_gemini=self.use_gemini_var.get(),
+                    upload_callback=self._handle_upload
+                )
             else:
                 # Show preview window
+                resized_image = self.image_handler.resize_preview(screenshot)
                 preview = PreviewWindow(
                     self.root,
                     resized_image,
-                    lambda annotated_path=None: self._handle_upload(annotated_path or temp_path),
-                    lambda: self._handle_cancel(temp_path)
+                    lambda annotated_path=None: self.image_handler.process_and_upload_image(
+                        annotated_path or temp_path,
+                        use_gemini=self.use_gemini_var.get(),
+                        upload_callback=self._handle_upload
+                    ),
+                    lambda: self.image_handler.cleanup_temp_file(temp_path)
                 )
                 preview.show()
         except Exception as e:
@@ -346,8 +374,6 @@ class MainWindow:
         except Exception as e:
             logger.error(f"Error uploading: {e}")
             self._show_status(f"Error: {str(e)}", True)
-        finally:
-            self.image_handler.cleanup_temp_file(temp_path)
 
     def _handle_cancel(self, temp_path):
         """Handle preview cancellation."""
