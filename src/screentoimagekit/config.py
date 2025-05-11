@@ -39,6 +39,44 @@ def decrypt_credentials(encrypted_credentials, key):
 class ConfigManager:
     """Manages application configuration and credentials."""
     
+    def __init__(self):
+        """Initialize the configuration manager."""
+        self.env_loaded = False
+        self.load_env()
+    
+    def load_env(self):
+        """Load environment variables from .env file."""
+        try:
+            # Load from .env file
+            if os.path.exists(ENV_FILE):
+                load_dotenv(ENV_FILE)
+                self.env_loaded = True
+                logger.info(".env file loaded successfully")
+            else:
+                logger.warning(".env file not found")
+        except Exception as e:
+            logger.error(f"Error loading .env file: {e}")
+            self.env_loaded = False
+    
+    def get(self, key, default=None):
+        """Get a configuration value.
+        
+        Args:
+            key: Configuration key to get
+            default: Default value if key not found
+            
+        Returns:
+            str: Configuration value or default
+        """
+        try:
+            value = os.getenv(key, default)
+            if value is None:
+                logger.warning(f"Configuration key '{key}' not found")
+            return value
+        except Exception as e:
+            logger.error(f"Error getting configuration value for '{key}': {e}")
+            return default
+    
     @staticmethod
     def load_env_credentials():
         """Load credentials from .env file."""
@@ -50,72 +88,64 @@ class ConfigManager:
                 public_key = os.getenv('PUBLIC_KEY')
                 url_endpoint = os.getenv('URL_ENDPOINT')
                 
-                if all([private_key, public_key, url_endpoint]):
-                    logger.info("Credentials loaded from .env file")
-                    return private_key, public_key, url_endpoint
+                # Check if all required credentials are present
+                if not all([private_key, public_key, url_endpoint]):
+                    logger.warning("Some credentials missing from .env file")
+                    return None, None, None
+                    
+                logger.info("Credentials loaded from .env file")
+                return private_key, public_key, url_endpoint
+                
+            logger.warning(".env file not found")
             return None, None, None
+            
         except Exception as e:
-            logger.error(f"Error loading .env credentials: {e}")
+            logger.error(f"Error loading credentials from .env: {e}")
             return None, None, None
     
-    @staticmethod
-    def save_credentials(private_key, public_key, url_endpoint):
-        """Save ImageKit credentials securely."""
+    def save_credentials(self, private_key, public_key, url_endpoint):
+        """Save ImageKit credentials to encrypted file."""
         try:
+            # Generate encryption key if it doesn't exist
             if not os.path.exists(KEY_FILE):
                 key = Fernet.generate_key()
-                with open(KEY_FILE, "wb") as key_file:
-                    key_file.write(key)
+                with open(KEY_FILE, 'wb') as f:
+                    f.write(key)
             else:
-                with open(KEY_FILE, "rb") as key_file:
-                    key = key_file.read()
-
-            encrypted_credentials = encrypt_credentials(
-                private_key, public_key, url_endpoint, key
-            )
-            with open(CREDENTIALS_FILE, "wb") as cred_file:
-                cred_file.write(encrypted_credentials)
+                with open(KEY_FILE, 'rb') as f:
+                    key = f.read()
+            
+            # Encrypt and save credentials
+            encrypted_credentials = encrypt_credentials(private_key, public_key, url_endpoint, key)
+            with open(CREDENTIALS_FILE, 'wb') as f:
+                f.write(encrypted_credentials)
+                
+            logger.info("Credentials saved successfully")
             return True
+            
         except Exception as e:
             logger.error(f"Error saving credentials: {e}")
             return False
-
-    @staticmethod
-    def load_credentials():
-        """Load ImageKit credentials from encrypted file or .env."""
+    
+    def load_credentials(self):
+        """Load ImageKit credentials from encrypted file."""
         try:
-            # First try to load from .env file
-            private_key, public_key, url_endpoint = ConfigManager.load_env_credentials()
-            if all([private_key, public_key, url_endpoint]):
-                return private_key, public_key, url_endpoint
-
-            # If .env credentials not found, try encrypted file
-            if not (os.path.exists(KEY_FILE) and 
-                   os.path.exists(CREDENTIALS_FILE) and 
-                   os.path.getsize(CREDENTIALS_FILE) > 0):
+            # Check if files exist
+            if not os.path.exists(CREDENTIALS_FILE) or not os.path.exists(KEY_FILE):
+                logger.warning("Credentials or key file not found")
                 return None, None, None
-
-            with open(KEY_FILE, "rb") as key_file:
-                key = key_file.read()
-            with open(CREDENTIALS_FILE, "rb") as cred_file:
-                encrypted_credentials = cred_file.read()
             
-            return decrypt_credentials(encrypted_credentials, key)
+            # Load key and encrypted credentials
+            with open(KEY_FILE, 'rb') as f:
+                key = f.read()
+            with open(CREDENTIALS_FILE, 'rb') as f:
+                encrypted_credentials = f.read()
+            
+            # Decrypt credentials
+            private_key, public_key, url_endpoint = decrypt_credentials(encrypted_credentials, key)
+            logger.info("Credentials loaded successfully")
+            return private_key, public_key, url_endpoint
+            
         except Exception as e:
             logger.error(f"Error loading credentials: {e}")
             return None, None, None
-
-    @staticmethod
-    def clear_credentials():
-        """Clear stored credentials."""
-        try:
-            if os.path.exists(CREDENTIALS_FILE):
-                os.remove(CREDENTIALS_FILE)
-                logger.debug("Credentials file removed.")
-            if os.path.exists(KEY_FILE):
-                os.remove(KEY_FILE)
-                logger.debug("Key file removed.")
-            return True
-        except Exception as e:
-            logger.error(f"Error clearing credentials: {e}")
-            return False

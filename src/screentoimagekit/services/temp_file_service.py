@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 import time
 import uuid
+import tempfile
 
 logger = logging.getLogger(__name__)
 
@@ -17,9 +18,17 @@ class TempFileService:
         
         Args:
             temp_dir (str, optional): Directory for temporary files. 
-                                    If None, uses current directory.
+                                    If None, uses system temp directory.
         """
-        self.temp_dir = temp_dir or os.getcwd()
+        if temp_dir:
+            self.temp_dir = temp_dir
+        else:
+            # Create a subdirectory in the system temp directory
+            self.temp_dir = os.path.join(tempfile.gettempdir(), "screentoimagekit")
+            
+        # Ensure temp directory exists
+        os.makedirs(self.temp_dir, exist_ok=True)
+        logger.debug(f"Using temporary directory: {self.temp_dir}")
         
     def cleanup_temp_files(self, pattern="s_*.png"):
         """Clean up temporary files matching the given pattern.

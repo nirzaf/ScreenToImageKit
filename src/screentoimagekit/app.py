@@ -1,9 +1,9 @@
 """Main application module for ScreenToImageKit."""
 
 import logging
-import platform
+import tkinter as tk
 from src.screentoimagekit.config import ConfigManager
-from src.screentoimagekit.utils.imaging import ImageHandler
+from src.screentoimagekit.services.image_handler import ImageHandler
 from src.screentoimagekit.services.imagekit_service import ImageKitService
 from src.screentoimagekit.services.temp_file_service import TempFileService
 from src.screentoimagekit.ui.main_window import MainWindow
@@ -21,16 +21,29 @@ class ScreenToImageKit:
         
         # Initialize services
         self.temp_file_service = TempFileService()
-        self.image_handler = ImageHandler(self.temp_file_service)
         self.config_manager = ConfigManager()
-        self.imagekit_service = ImageKitService()
+        
+        # Get API keys from config
+        gemini_api_key = self.config_manager.get('GEMINI_API_KEY')
+        imagekit_private_key = self.config_manager.get('PRIVATE_KEY')
+        imagekit_public_key = self.config_manager.get('PUBLIC_KEY')
+        imagekit_url_endpoint = self.config_manager.get('URL_ENDPOINT')
+        
+        # Initialize services with config
+        self.image_handler = ImageHandler(self.temp_file_service, gemini_api_key)
+        self.imagekit_service = ImageKitService(
+            private_key=imagekit_private_key,
+            public_key=imagekit_public_key,
+            url_endpoint=imagekit_url_endpoint
+        )
         
         # Clean up any leftover temporary files
         self.temp_file_service.cleanup_temp_files()
         
         # Create main window
+        self.root = tk.Tk()
         self.main_window = MainWindow(
-            self.config_manager,
+            self.root,
             self.image_handler,
             self.imagekit_service
         )
@@ -55,8 +68,8 @@ class ScreenToImageKit:
         """Setup system tray icon and menu."""
         menu_items = [
             {'text': "Show", 'action': self.main_window.show},
-            {'text': "Capture", 'action': self.main_window._handle_capture},
-            {'text': "Configure", 'action': self.main_window._handle_config},
+            {'text': "Capture", 'action': self.main_window._handle_area_selection},
+            {'text': "Configure", 'action': self.main_window._show_config_dialog},
             {'text': "Exit", 'action': self.exit}
         ]
         
@@ -69,13 +82,14 @@ class ScreenToImageKit:
     def run(self):
         """Start the application."""
         try:
-            logger.info("Starting Screenshot to ImageKit application")
-            self.main_window.run()
+            logger.info("Starting application main loop")
+            self.root.mainloop()
         except Exception as e:
-            logger.critical(f"Fatal error in main application: {e}")
-            raise
+            logger.error(f"Error in main loop: {e}")
         finally:
-            self.cleanup()
+            # Clean up temporary files on exit
+            self.temp_file_service.cleanup_temp_files()
+            logger.info("Application shutdown complete")
 
     def exit(self):
         """Exit the application."""
@@ -100,13 +114,12 @@ class ScreenToImageKit:
             logger.error(f"Error during cleanup: {e}")
 
 def main():
-    """Application entry point."""
+    """Main entry point for the application."""
     try:
         app = ScreenToImageKit()
         app.run()
     except Exception as e:
-        logger.critical(f"Application crashed: {e}")
-        raise
+        logger.error(f"Application failed to start: {e}")
 
 if __name__ == "__main__":
     main()

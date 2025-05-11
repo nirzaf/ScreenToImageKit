@@ -1,32 +1,38 @@
 """Preview window for captured screenshots."""
 
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox
 from PIL import ImageTk, ImageFilter, Image, ImageDraw
 import math
 from .drawing_tools import DrawingToolbar, DrawingCanvas, DrawingTool
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
 class PreviewWindow(tk.Toplevel):
     """Window for previewing and managing captured screenshots."""
 
-    def __init__(self, parent, image, on_upload=None, on_cancel=None):
+    def __init__(self, parent, image_or_path, on_upload=None, on_cancel=None, direct_upload=True, use_gemini=False):
         """Initialize preview window.
         
         Args:
             parent: Parent window
-            image: PIL Image object or path to image
+            image_or_path: PIL Image object or path to image
             on_upload: Callback for upload action
             on_cancel: Callback for cancel action
+            direct_upload: Whether to upload immediately
+            use_gemini: Whether to use Gemini AI for analysis
         """
         super().__init__(parent)
         self.title("Preview")
         self.on_upload = on_upload
         self.on_cancel = on_cancel
+        self.direct_upload = direct_upload
+        self.use_gemini = use_gemini
         self.photo_image = None
         self.image = None  # Store the PIL image
+        self.temp_path = None  # Store the path if provided
         
         # Create top frame for toolbar and upload button
         top_frame = ttk.Frame(self)
@@ -49,59 +55,86 @@ class PreviewWindow(tk.Toplevel):
         # Create scrollbars
         self.h_scrollbar = ttk.Scrollbar(self.canvas_frame, orient=tk.HORIZONTAL)
         self.v_scrollbar = ttk.Scrollbar(self.canvas_frame, orient=tk.VERTICAL)
-        self.h_scrollbar.grid(row=1, column=0, sticky='ew')
-        self.v_scrollbar.grid(row=0, column=1, sticky='ns')
-
-        # Process the input image
-        if isinstance(image, str):
-            self._load_image(image)
-        else:
-            self._display_image(image)
         
-        # Create drawing canvas with the processed image
+        # Create drawing canvas
         self.canvas = DrawingCanvas(self.canvas_frame, self.image)
-        self.canvas.configure(xscrollcommand=self.h_scrollbar.set,
-                            yscrollcommand=self.v_scrollbar.set)
-        self.canvas.grid(row=0, column=0, sticky='nsew')
         
         # Configure scrollbars
-        self.h_scrollbar.configure(command=self.canvas.xview)
-        self.v_scrollbar.configure(command=self.canvas.yview)
+        self.h_scrollbar.config(command=self.canvas.xview)
+        self.v_scrollbar.config(command=self.canvas.yview)
         
-        # Set canvas in toolbar
-        self.toolbar.set_canvas(self.canvas)
+        # Grid layout
+        self.canvas.grid(row=0, column=0, sticky="nsew")
+        self.h_scrollbar.grid(row=1, column=0, sticky="ew")
+        self.v_scrollbar.grid(row=0, column=1, sticky="ns")
         
-        # Configure window
-        self.protocol("WM_DELETE_WINDOW", self._on_closing)
-        self.state('zoomed')
+        # Load and display the image
+        self._load_image(image_or_path)
+        
+        # Bind events
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    def _load_image(self, image_or_path):
+        """Load and display the image."""
+        try:
+            if isinstance(image_or_path, str):
+                self.image = Image.open(image_or_path)
+                self.temp_path = image_or_path
+            else:
+                self.image = image_or_path
+                # Temp path will be set when saving
+            
+            # Convert image for display
+            self.photo_image = ImageTk.PhotoImage(self.image)
+            
+            # Update canvas size and scrollregion
+            self.canvas.config(scrollregion=(0, 0, self.image.width, self.image.height))
+            self.canvas.create_image(0, 0, anchor=tk.NW, image=self.photo_image)
+            
+        except Exception as e:
+            logger.error(f"Error loading image: {e}")
+            messagebox.showerror("Error", f"Failed to load image: {e}")
+            self.destroy()
 
     def _handle_upload(self):
         """Handle upload button click."""
-        if self.on_upload:
-            # Get the annotated image before uploading
-            annotated_image = self.canvas.get_annotated_image()
-            # Save the annotated image temporarily
-            import os
-            import tempfile
-            temp_dir = tempfile.gettempdir()
-            temp_path = os.path.join(temp_dir, "annotated_screenshot.png")
-            annotated_image.save(temp_path, "PNG")
-            # Call the upload callback with the new temp path
-            self.on_upload(temp_path)
-        self.destroy()
+        try:
+            if self.on_upload:
+                # Get the current image with any annotations
+                annotated_image = self.get_annotated_image()
+                if annotated_image:
+                    # Save the annotated image to the temp path
+                    if self.temp_path:
+                        annotated_image.save(self.temp_path)
+                        self.on_upload(self.temp_path)
+                    else:
+                        # Create a new temp file if we don't have one
+                        temp_path = os.path.join(os.getenv('TEMP'), 'screentoimagekit', f"s{os.urandom(4).hex()}.png")
+                        os.makedirs(os.path.dirname(temp_path), exist_ok=True)
+                        annotated_image.save(temp_path)
+                        self.on_upload(temp_path)
+                self.destroy()
+        except Exception as e:
+            logger.error(f"Error handling upload: {e}")
+            messagebox.showerror("Error", f"Failed to upload image: {e}")
+
+    def _on_close(self):
+        """Handle window close."""
+        try:
+            if self.on_cancel and self.temp_path:
+                self.on_cancel(self.temp_path)
+            self.destroy()
+        except Exception as e:
+            logger.error(f"Error during close: {e}")
+            self.destroy()
+
+    def _on_tool_selected(self, tool):
+        """Handle tool selection."""
+        self.canvas.current_tool = tool
 
     def get_image(self):
         """Get the current image (with annotations if any)."""
         return self.image
-
-    def _load_image(self, image_path):
-        """Load and display the image from file."""
-        try:
-            self.image = Image.open(image_path)
-            self._scale_image()
-        except Exception as e:
-            logger.error(f"Error loading image: {e}")
-            self.destroy()
 
     def _display_image(self, image):
         """Display the PIL image on the canvas."""
@@ -139,17 +172,6 @@ class PreviewWindow(tk.Toplevel):
         except Exception as e:
             logger.error(f"Error scaling image: {e}")
             self.destroy()
-
-    def _on_tool_selected(self, tool):
-        """Handle tool selection."""
-        if self.canvas:
-            self.canvas.current_tool = tool
-
-    def _on_closing(self):
-        """Handle window closing."""
-        if self.on_cancel:
-            self.on_cancel()
-        self.destroy()
 
     def show(self):
         """Display the preview window."""

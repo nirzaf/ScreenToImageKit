@@ -1,0 +1,3 @@
+@echo off
+echo Starting ScreenToImageKit...
+.\venv_new\Scripts\python.exe main.py
